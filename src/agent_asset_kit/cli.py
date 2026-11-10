@@ -36,7 +36,7 @@ def initialize(argv):
             target.rmdir()  # Fails if another process added content; never replace it.
         stage.rename(target)
     if args.git:
-        result = subprocess.run(['git', 'init', '-b', 'main', str(target)], capture_output=True, text=True, timeout=60)
+        result = subprocess.run(['git', 'init', '-b', 'main', str(target)], capture_output=True, text=True, encoding='utf-8', timeout=60)
         if result.returncode:
             raise ValueError('library files retained, but Git initialization failed: ' + result.stderr.strip())
     return {'initialized': str(target), 'git_initialized': args.git, 'packages': 0,
@@ -54,7 +54,7 @@ def validate_library(path):
         raise ValueError('unsupported asset library marker; inspect its format before continuing')
     if (path / '.git').is_file():
         result = subprocess.run(['git', '-C', str(path), 'rev-parse', '--git-common-dir'],
-                                capture_output=True, text=True, timeout=60)
+                                capture_output=True, text=True, encoding='utf-8', timeout=60)
         if result.returncode:
             raise ValueError('unable to identify the primary asset library')
         primary = (path / result.stdout.strip()).resolve().parent
@@ -76,7 +76,7 @@ def library_root(explicit, default_command=None):
             return validate_library(path)
         if (path / '.git').is_file():
             git = subprocess.run(['git', '-C', str(path), 'rev-parse', '--git-common-dir'],
-                                 capture_output=True, text=True, timeout=60)
+                                 capture_output=True, text=True, encoding='utf-8', timeout=60)
             if not git.returncode:
                 primary = (path / git.stdout.strip()).resolve().parent
                 if (primary / '.agent-asset-kit.json').is_file():

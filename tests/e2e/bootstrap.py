@@ -59,7 +59,7 @@ def main():
             stopped = cli('catalog', cwd=base, expected=2)
             check('unselected library is rejected without creating local state', stopped['status'] == 'STOPPED' and not (base / '.local').exists())
             result = cli('init', library, '--git', cwd=base)
-            manifest = json.loads((library / 'skills/manifest.json').read_text())
+            manifest = json.loads((library / 'skills/manifest.json').read_text(encoding='utf-8'))
             check('init creates an empty library outside the engine', result['packages'] == 0 and manifest['packages'] == {} and not (library / 'src').exists())
             check('packaged hidden files and empty directories survive installation',
                   (library / '.gitignore').is_file() and (library / '.gitattributes').is_file() and
@@ -69,7 +69,7 @@ def main():
             cli('init', library, cwd=base, expected=2)
             check('repeat init preserves existing files', (library / 'USER.md').read_bytes() == before)
             cli('--root', library, 'configure', '--home', home, '--agents', 'codex,claude', '--gitleaks', args.scanner, cwd=base)
-            config = json.loads((library / '.local/config.json').read_text())
+            config = json.loads((library / '.local/config.json').read_text(encoding='utf-8'))
             check('configuration has no default repository or publication permission', config['github_repository'] == '' and config['publication_enabled'] is False and not home.exists())
             incompatible = cli('--root', library, 'sync', '--agent', 'codex', '--message', 'Must not commit', '--local-only', '--branch-only', cwd=base, expected=2)
             head = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=library, capture_output=True)
@@ -82,7 +82,7 @@ def main():
             cli('--root', library, 'sync', '--agent', 'codex', '--message', 'Synthetic initial library', cwd=base, expected=2)
             check('remote publication remains disabled', not run(['git', 'remote'], library).strip())
             local = cli('--root', library, 'sync', '--agent', 'codex', '--message', 'Synthetic initial library', '--local-only', cwd=base)
-            check('local-only sync commits without enabling remote publication', bool(local['head']) and not local['pushed'] and json.loads((library / '.local/config.json').read_text())['publication_enabled'] is False)
+            check('local-only sync commits without enabling remote publication', bool(local['head']) and not local['pushed'] and json.loads((library / '.local/config.json').read_text(encoding='utf-8'))['publication_enabled'] is False)
             check('local configuration is not tracked', not run(['git', 'ls-files', '.local'], library).strip())
             refresh = cli('--root', library, 'refresh', cwd=base)
             check('refresh needs no remote for local use', refresh.get('refreshed') is False)
@@ -139,7 +139,7 @@ def main():
             trial = Path(first['target'])
             claude = quick_home / '.claude/skills/fixture-skill'
             def records():
-                return json.loads((quick / 'skills/manifest.json').read_text())['packages']
+                return json.loads((quick / 'skills/manifest.json').read_text(encoding='utf-8'))['packages']
             check('one command installs an independent copy on just one Agent before adoption',
                   trial.is_dir() and not trial.is_symlink() and not records() and not claude.exists())
             pending = cli('--root', quick, 'collect', cwd=base)
@@ -147,7 +147,7 @@ def main():
             helper = trial / 'scripts/helper.py'
             helper.write_text('print("local change")\n')
             again = cli('try', source, '--skill', './demo', '--to', 'codex', cwd=base)
-            check('retry preserves native edits', again['already_installed'] and 'local change' in helper.read_text())
+            check('retry preserves native edits', again['already_installed'] and 'local change' in helper.read_text(encoding='utf-8'))
             preview = cli('save', 'fixture-skill', '--from', 'codex', '--dry-run', cwd=base)
             check('preview reports edited file without adoption', preview['changed_since_install'] == ['scripts/helper.py'] and not records())
             lic = trial / 'LICENSE'
@@ -174,32 +174,32 @@ def main():
             cli('agent', 'disable', '--name', 'claude', '--reviewed', cwd=base)
             cli('share', 'fixture-skill', '--to', 'claude', cwd=base, expected=2)
             check('explicitly disabled Agent stays disabled after an explicit share',
-                  not json.loads((quick / '.local/config.json').read_text())['agents']['claude']['enabled'])
+                  not json.loads((quick / '.local/config.json').read_text(encoding='utf-8'))['agents']['claude']['enabled'])
             cli('agent', 'enable', '--name', 'claude', '--reviewed', cwd=base)
             (claude / 'scripts/helper.py').write_text('shared copy improved')
             cli('save', 'fixture-skill', '--from', 'claude', cwd=base)
-            check('edits on the second Agent can return independently', (quick / item['path'] / 'scripts/helper.py').read_text() == 'shared copy improved'
-                  and helper.read_text() != 'shared copy improved')
+            check('edits on the second Agent can return independently', (quick / item['path'] / 'scripts/helper.py').read_text(encoding='utf-8') == 'shared copy improved'
+                  and helper.read_text(encoding='utf-8') != 'shared copy improved')
             cli('share', 'fixture-skill', '--to', 'codex', cwd=base)
             (claude / 'scripts/helper.py').write_text('independent edit')
             helper.write_text('different new edit')
             cli('save', 'fixture-skill', '--from', 'codex', cwd=base)
             cli('share', 'fixture-skill', '--to', 'claude', cwd=base, expected=2)
-            check('share preserves conflicting edits on the second Agent', (claude / 'scripts/helper.py').read_text() == 'independent edit')
+            check('share preserves conflicting edits on the second Agent', (claude / 'scripts/helper.py').read_text(encoding='utf-8') == 'independent edit')
             candidates = cli('--root', quick, 'collect', cwd=base)['candidates']
             incoming = next(c for c in candidates if c['bindings'][0]['agent'] == 'claude')
             merged = cli('--root', quick, 'merge', '--candidate', incoming['id'], cwd=base)
             check('divergent copies retain a common base for merge before the first Git commit',
                   'scripts/helper.py' in merged['conflicts'] and 'shared copy improved' in
-                  (Path(merged['merged_package']).parent / 'base/scripts/helper.py').read_text())
+                  (Path(merged['merged_package']).parent / 'base/scripts/helper.py').read_text(encoding='utf-8'))
             local_source = upstream / 'demo'
             md = local_source / 'SKILL.md'
-            md.write_text(md.read_text().replace('fixture-skill', 'local-demo'))
+            md.write_text(md.read_text(encoding='utf-8').replace('fixture-skill', 'local-demo'))
             collision = quick_home / '.codex/skills/local-demo'
             collision.mkdir()
             (collision / 'notes').write_text('keep')
             cli('try', local_source, '--to', 'codex', cwd=base, expected=2)
-            check('try retains an unrelated same-name directory', (collision / 'notes').read_text() == 'keep')
+            check('try retains an unrelated same-name directory', (collision / 'notes').read_text(encoding='utf-8') == 'keep')
             shutil.rmtree(collision)
             cli('try', local_source, '--to', 'codex', cwd=base)
             secret_path = collision / 'config.txt'
