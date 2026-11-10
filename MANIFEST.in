@@ -1,5 +1,6 @@
 include AGENTS.md CONTRIBUTING.md SECURITY.md .gitignore .gitattributes
 recursive-include docs *.md
+exclude docs/review-????-??-??.md
 recursive-include schemas *.json
 recursive-include scripts *.py
 recursive-include tests *.py *.md *.lock LICENSE .gitignore
