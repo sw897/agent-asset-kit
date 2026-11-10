@@ -109,8 +109,9 @@ def main():
             attached_text = instruction.read_text(encoding='utf-8')
             check('equivalent instances write one instruction block and retain one original backup',
                   len(attached['changes']) == 1 and attached_text.count('<!-- AGENT_ASSET_KIT_START -->') == 1 and
-                  'aak guide' in attached_text and str(library) in attached_text and
                   Path(attached['changes'][0]['backup']).read_bytes() == original)
+            check('attachment points to the installed guide and resolved library',
+                  'aak guide' in attached_text and str(library.resolve()) in attached_text)
             quick_home = base / 'quick home'
             quick_home.mkdir()
             environment.update(HOME=str(quick_home), USERPROFILE=str(quick_home),
