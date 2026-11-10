@@ -12,38 +12,18 @@ import os
 from pathlib import Path
 import platform
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
 
+from fixture_cleanup import cleanup_workdir
+
 ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / 'src/agent_asset_kit/resources/library'
 KINDS = ('codex', 'claude', 'hermes', 'opencode', 'zcode', 'deepseekharness')
 B_KINDS = ('codex', 'opencode', 'zcode', 'deepseekharness')
-
-
-def cleanup_workdir(work):
-    target = work.resolve()
-    if target.parent != Path(tempfile.gettempdir()).resolve() or not target.name.startswith('aa-workflows-'):
-        raise RuntimeError('refuse cleanup outside the synthetic workflow directory')
-
-    def remove_readonly(function, path, exc_info):
-        item = Path(path)
-        error = exc_info[1]
-        info = item.lstat()
-        attributes = getattr(info, 'st_file_attributes', 0)
-        if (os.name != 'nt' or function not in (os.unlink, os.remove)
-                or not isinstance(error, PermissionError) or not stat.S_ISREG(info.st_mode)
-                or attributes & 0x400 or not attributes & 0x1
-                or not item.resolve().is_relative_to(target)):
-            raise error
-        item.chmod(info.st_mode | stat.S_IWRITE)
-        function(path)
-
-    shutil.rmtree(target, onerror=remove_readonly)
 
 
 def main():
@@ -558,7 +538,7 @@ for line in sys.stdin:
         report['error'] = traceback.format_exc()
     if report['status'] == 'PASS':
         try:
-            cleanup_workdir(work)
+            cleanup_workdir(work, 'aa-workflows-')
             report['cleanup'] = 'PASS'
         except Exception:
             report.update(status='FAIL', cleanup='FAIL', error=traceback.format_exc())

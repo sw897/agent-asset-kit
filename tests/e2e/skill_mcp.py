@@ -13,6 +13,8 @@ import sys
 import tempfile
 import time
 
+from fixture_cleanup import cleanup_workdir
+
 ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / 'src/agent_asset_kit/resources/library'
 FAKE = r'''
@@ -264,13 +266,12 @@ def main():
         clone = work / 'other-device'
         run(['git', 'clone', repo, clone])
         check('another Git clone receives no local binding or credentials', not (clone / '.local').exists())
+        cleanup_workdir(work, 'aa-mcp-')
         report['status'] = 'PASS'
         report['source_sha256'] = hashlib.sha256((ROOT / 'src/agent_asset_kit/skill_mcp.py').read_bytes()).hexdigest()
         print(json.dumps({'status': 'PASS', 'assertions': len(report['assertions']), 'report': str(out / 'report.json')}))
     finally:
         write(out / 'report.json', report)
-        if report['status'] == 'PASS':
-            shutil.rmtree(work)
 
 
 if __name__ == '__main__':
