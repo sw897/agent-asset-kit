@@ -1,0 +1,14 @@
+{
+  "agent-environment": {
+    "label": "Agent environment"
+  },
+  "engineering": {
+    "label": "Engineering"
+  },
+  "research": {
+    "label": "Research"
+  },
+  "personal-services": {
+    "label": "Personal services"
+  }
+}

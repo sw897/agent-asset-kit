@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-asset-kit"
+version = "1.0.0"
+description = "A CLI for AI agents to manage reusable agent assets, review skill edits and sync across devices."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "AgentAssetKit contributors"}]
+keywords = ["agent-assets", "agent-skills", "ai-agents", "asset-management", "cli"]
+classifiers = [
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+
+[project.scripts]
+aak = "agent_asset_kit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agent_asset_kit = ["native_deepseek_catalog.mjs", "resources/agent-guide.md", "resources/library/**/*", "resources/library/**/.*", "resources/library/.*"]

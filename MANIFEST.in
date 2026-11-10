@@ -1,0 +1,11 @@
+include AGENTS.md CONTRIBUTING.md SECURITY.md .gitignore .gitattributes
+recursive-include docs *.md
+recursive-include schemas *.json
+recursive-include scripts *.py
+recursive-include tests *.py *.md *.lock LICENSE .gitignore
+prune .local
+prune artifacts
+prune .venv
+prune build
+prune dist
+global-exclude __pycache__ *.pyc

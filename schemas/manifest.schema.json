@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentAssetKit skill manifest",
+  "description": "Portable package metadata. Runtime additionally verifies hashes, modes, paths and native state.",
+  "type": "object",
+  "required": ["version", "packages"],
+  "properties": {
+    "version": {"enum": [1, 2]},
+    "packages": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/package"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "required": ["agent", "path"],
+      "properties": {
+        "agent": {"enum": ["codex", "claude", "hermes", "opencode", "zcode", "deepseekharness", "shared"]},
+        "path": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "package": {
+      "type": "object",
+      "required": ["name", "path", "sha256", "origin", "bindings"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "pattern": "^skills/(custom|third-party)/[^/]+$"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "origin": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {"kind": {"enum": ["custom", "third-party"]}},
+          "additionalProperties": true
+        },
+        "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
+        "file_modes": {"type": "object", "additionalProperties": {"enum": [420, 493]}},
+        "category": {"type": "string"},
+        "dependencies": {"type": "array", "items": {"type": "object"}},
+        "requirements": {"type": "object"},
+        "lifecycle": {"enum": ["reviewed"]}
+      },
+      "additionalProperties": true
+    }
+  }
+}
