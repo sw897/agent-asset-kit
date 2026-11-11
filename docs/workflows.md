@@ -15,6 +15,16 @@ aak sync --agent codex --message "Accept reviewed candidate" --local-only
 
 第三方资源使用 `--kind third-party`。已有 ID 保留绑定和审阅后的分类、依赖等元数据。
 
+入库先准备完整包和元数据快照。写入报错时，工具在内容仍匹配快照的情况下回退到入库前状态，保留候选供重试。进程中断或后续编辑阻止安全回退时，未完成的收据会阻止继续操作；用 `status` 查看原工作区与收据 ID，在该工作区审阅后恢复：
+
+```sh
+aak status
+aak accept --recover ACCEPTANCE_ID --agent codex --reviewed
+# 恢复到入库前状态后，可重试原来的 accept 命令
+```
+
+恢复核对完整包、备份以及所有相关元数据，不覆盖后续编辑；准备副本和原候选继续保留。工作区发生过变化时须选择收据中的原 `--root`。旧格式收据没有完整恢复快照，需要人工对照，工具不会猜测回退内容。
+
 ## 隔离编辑与双端变化
 
 主资产库保留在 main。`aak workspace --agent codex` 创建独立 Git 工作区；后续传入该工作区路径作为 `--root`。不同会话不共享暂存区。`sync --local-only` 普通合并回主资产库并保留工作分支，不自动 stash、不强推。

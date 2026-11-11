@@ -28,6 +28,7 @@ from . import skill_trials
 from . import skill_merge
 from . import skill_versions
 from . import skill_mcp
+from . import skill_acceptance
 
 PUBLISH_FILES = {'AGENTS.md', 'README.md', 'USER.md', 'MEMORY.md', '.gitignore', '.gitattributes', '.agent-asset-kit.json', 'LICENSE'}
 PUBLISH_DIRS = {'agents', 'memory', 'skills', 'templates', 'scripts', 'tests', 'licenses', '.github'}
@@ -70,6 +71,12 @@ def record(name, kind, files, bindings, agent, origin=None):
 
 def accept(args):
     reviewed(args)
+    recovery = getattr(args, 'recover', None)
+    if bool(args.candidate) == bool(recovery):
+        raise Stop('select either a candidate or --recover ACCEPTANCE_ID')
+    if recovery:
+        return skill_acceptance.recover(recovery)
+    before = skill_acceptance.capture()
     folder = LOCAL / 'candidates' / relative(args.candidate)
     item = load(folder / 'candidate.json')
     if not item:
@@ -137,45 +144,25 @@ def accept(args):
     target = canonical_path(ROOT, updated)
     if target.exists() and not item['skill_id']:
         raise Stop('unregistered canonical directory exists; register/review it first')
-    stage = target.parent / '.asset-staging' / uuid.uuid4().hex
-    library_path(stage)
-    stage.mkdir(parents=True)
-    write_tree(stage, files)
-    backup = target.parent / '.asset-backups' / uuid.uuid4().hex
-    library_path(backup)
-    journal_path = LOCAL / 'acceptances' / (uuid.uuid4().hex + '.json')
-    journal = {'state': 'PREPARED', 'target': str(target), 'backup': str(backup),
-               'candidate': item['id'], 'skill_id': ident, 'previous': previous}
-    save(journal_path, journal)
-    if previous:
-        package(ROOT, previous)
-    if target.exists():
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        rename_new(target, backup)
-    try:
-        rename_new(stage, target)
-    except BaseException:
-        if backup.exists() and not target.exists():
-            rename_new(backup, target)
-        raise
     # Reviewed classification, dependencies and provenance survive native backflow.
+    updates = {}
     if releases['skills'] or (ROOT / 'skills/releases.json').exists():
-        save(ROOT / 'skills/releases.json', releases)
-    save(ROOT / 'skills/manifest.json', manifest)
+        updates['releases'] = releases
+    updates['manifest'] = manifest
     if item.get('candidate_type') == 'external':
         decisions = load(ROOT / 'skills/decisions.json', {'version': 1, 'entries': []})
         decisions['entries'].append(dict(evaluation, source_key=skill_sources.source_key(item['origin']),
                                          name=updated['name'], skill_id=ident))
-        save(ROOT / 'skills/decisions.json', decisions)
+        updates['decisions'] = decisions
     if item.get('reconciled') and item.get('bindings') and item.get('candidate_type') != 'external':
         approvals = load(LOCAL / 'accepted-copies.json', {})
         for binding in item['bindings']:
             approvals[key(binding)] = {'observed_sha256': item['original_sha256'],
                                        'replacement_sha256': item['sha256'], 'candidate': item['id']}
-        save(LOCAL / 'accepted-copies.json', approvals)
-    journal['state'] = 'COMPLETE'
-    save(journal_path, journal)
-    return {'accepted': item['id'], 'skill_id': ident, 'path': target.relative_to(ROOT).as_posix()}
+        updates['approvals'] = approvals
+    transaction = skill_acceptance.apply(item['id'], ident, previous, updated, files, updates, before)
+    return {'accepted': item['id'], 'skill_id': ident, 'path': target.relative_to(ROOT).as_posix(),
+            'acceptance_id': transaction}
 
 
 def register(args):
@@ -347,6 +334,8 @@ def sync(args):
     branch = git('branch', '--show-current').stdout.strip()
     if not branch:
         raise Stop('detached HEAD cannot publish')
+    if args.branch_only and (ROOT == PRIMARY or not branch.startswith(('codex/', 'assets/'))):
+        raise Stop('--branch-only needs an isolated managed branch and authenticated publication')
     if git('diff', '--cached', '--quiet', check=False).returncode:
         raise Stop('unknown staged changes; inspect the index first')
     for marker in ('MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD'):
@@ -397,8 +386,6 @@ def sync(args):
             raise Stop('files changed during scan; staged content retained for review')
         git('commit', '-m', f'{args.agent}: {args.message}')
     if getattr(args, 'branch_only', False):
-        if args.local_only or ROOT == PRIMARY or not branch.startswith(('codex/', 'assets/')):
-            raise Stop('--branch-only needs an isolated managed branch and authenticated publication')
         export_scan(ROOT)
         git('push', 'origin', 'HEAD:refs/heads/' + branch)
         remote = git('ls-remote', 'origin', 'refs/heads/' + branch).stdout.split()[0]
@@ -716,7 +703,8 @@ def main(argv=None, initialize_default=False):
         if command not in ('apply-project', 'recheck'):
             p.add_argument('--agent', required=True)
         if command == 'accept':
-            p.add_argument('candidate')
+            p.add_argument('candidate', nargs='?')
+            p.add_argument('--recover', help='restore the pre-acceptance package and metadata from an interrupted receipt')
             p.add_argument('--kind', choices=['custom', 'third-party'])
             p.add_argument('--name')
             p.add_argument('--trial', action='store_true')
@@ -851,6 +839,8 @@ def main(argv=None, initialize_default=False):
             initialize([str(ROOT), '--git'])
         with locked():
             command = args.command_name
+            if command != 'status' and not (command == 'accept' and args.recover):
+                skill_acceptance.guard()
             if command in ('try', 'save', 'share'):
                 if command in ('try', 'share') and not load(LOCAL / 'config.json'):
                     configure(argparse.Namespace(home=Path.home(), agents=None, gitleaks=None,
@@ -900,6 +890,7 @@ def main(argv=None, initialize_default=False):
                           'publication_enabled': cfg()['publication_enabled'],
                           'git': git('status', '--short', '--branch').stdout,
                           'pending_candidates': len(load(LOCAL / 'last-collection.json', {}).get('candidates', [])),
+                          'pending_acceptances': skill_acceptance.pending(),
                           'last_tick': load(LOCAL / 'last-tick.json', {})}
             else:
                 result = {'accept': accept, 'register': register, 'revision': revision,

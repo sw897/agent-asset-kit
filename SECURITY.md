@@ -6,6 +6,8 @@ Keep credentials, cookies, private keys, native databases, raw transcripts and l
 
 Preview target paths and changes before applying. Deployment and trials bind applications to frozen plans and reject changed sources, configuration or targets. Unknown changes and interrupted operations must be reconciled explicitly.
 
+Acceptance prepares package and metadata snapshots before switching content. A failed write rolls back only recognized versions; interrupted receipts block further operations until reviewed recovery in the original workspace. Recovery preserves prepared copies and refuses subsequent edits. Legacy receipts without complete snapshots require manual reconciliation.
+
 Native discovery starts the configured clients in catalog modes without a model turn. Optional live MCP checks contact the selected local tool service; explicit MCP connect can change its shared configuration. Ordinary collect, sync and deploy do not invoke business MCP tools.
 
 For public issues, provide a minimal reproduction with synthetic data. Keep credentials, private skill libraries and personal logs out of public reports.
