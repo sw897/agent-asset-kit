@@ -83,9 +83,38 @@ aak deploy --apply --plan PLAN_ID
 
 `attach` 预览向启用客户端添加资产库入口，`attach --apply` 备份并保留非受管内容。资产库可用 `agents/instruction-blocks.json` 指定受管标记与库内 Markdown 模板，例如 `{"TEAM_RULES":"agents/team.md"}`。模板支持 `{{aak}}`、`{{root}}`、`{{local}}`、`{{skills_root}}`、`{{agent}}`。运行前检查预览中的确切文件。
 
-`audit` 核对包、引用、条件依赖和副本；`doctor --native` 读取真实客户端目录，但不能证明模型或业务任务已经成功。可选的 `mcp check`、`mcp bind` 与 `mcp connect` 分别负责检查、保存本机逻辑映射、显式调用外部 mcplink 接入；普通同步不配置 MCP。
+`audit` 核对包、引用、依赖声明和副本；`doctor --native` 进一步读取真实客户端的技能目录。服务可用性、模型采用和业务任务效果需要在目标环境核验。
 
 macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装；不会后台接受候选或发布。其他平台调度尚未实现。
+
+## 技能依赖声明
+
+技能之间的依赖保存在包记录的 `dependencies` 中；命令、文件、Python 环境和 MCP 能力保存在 `requirements` 中。AAK 校验和保留这些元数据，回流、修订和 Git 副本继续携带已审阅的声明。
+
+`requirements.mcp` 沿用以下格式。先在技能包内准备说明文件，再把声明加入该技能的 manifest 记录：
+
+```json
+{
+  "requirements": {
+    "mcp": [
+      {
+        "service": "notes",
+        "mode": "read",
+        "via": "native",
+        "tools": ["read_item"],
+        "optional": false,
+        "reference": "references/service.md"
+      }
+    ]
+  }
+}
+```
+
+`service` 是逻辑服务名，`mode` 是技能的使用模式，`via` 可为 `native` 或 `cli`。`tools` 保留原始能力名称，`optional` 说明该模式是否可选，`reference` 指向包内已有的相对文件。连接 ID、账号、聚合入口 ID、设备路径和凭据属于目标环境，不加入能力声明。
+
+在资产库运行 `aak audit` 校验声明格式及引用，再用 `aak index --agent codex --reviewed` 展示能力依赖。审计结果中的 `packages[].mcp_declarations` 保留原声明；MCP 可用性由使用者在目标客户端或所选外部工具中检查。安装与分发技能不触发 MCP 发现、认证或连接配置。
+
+旧版的 `aak mcp check/bind/connect` 与 `audit/doctor --mcp` 已移除，审计输出也不再包含 `mcp_checked` 或连接就绪结果 `mcp`。已有声明格式保持兼容；原生 MCP 配置、旧 `.local/mcp-bindings.json` 和 `.local/mcp-plans/` 原样保留，AAK 不再读取或维护这些本机记录。后续接入管理在对应客户端或外部管理工具中完成。
 
 ## 可选 GitHub 私有资产库
 

@@ -20,7 +20,7 @@ def main():
     scanner = Path(args.scanner).resolve() if args.scanner else install(ROOT / '.local/ci-tools')
     for path in (ROOT / 'src/agent_asset_kit').glob('*.py'):
         py_compile.compile(str(path), doraise=True)
-    suites = ['bootstrap.py', 'boundaries.py', 'transactions.py', 'workflows.py', 'skill_mcp.py']
+    suites = ['bootstrap.py', 'boundaries.py', 'transactions.py', 'workflows.py', 'skill_dependencies.py']
     if platform.system() != 'Windows':
         suites += ['run.py', 'skill_catalog.py']
     for name in suites:

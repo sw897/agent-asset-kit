@@ -18,7 +18,7 @@ import time
 from .assetlib import (ROOT, LOCAL, Stop, atomic, cfg, files_in, inventory, key,
                       load, native_path, package, registry, relative, save, tree_hash, read_native, ACTIVE_TRIAL_STATES)
 from . import agent_adapters
-from . import skill_mcp
+from . import skill_dependencies
 from .skill_versions import effective
 
 TARGETS = agent_adapters.KINDS
@@ -63,7 +63,7 @@ def targets(value):
 
 def contracts(manifest):
     by_name = {r['name']: r for r in manifest['packages'].values()}
-    issues = skill_mcp.contracts(manifest)
+    issues = skill_dependencies.contracts(manifest)
     aliases = {}
     categories = load(ROOT / 'skills/categories.json', {})
     for r in manifest['packages'].values():
@@ -475,12 +475,6 @@ def audit(args, native=False):
             row['native_names'] = sorted({s['name'] for s in found})
             if not found:
                 issues.append({'skill': row['name'], 'target': target, 'code': 'NOT_VISIBLE', 'severity': 'error'})
-    mcp = skill_mcp.check(target=args.target, instance=getattr(args, 'instance', None), live=True) if getattr(args, 'mcp', False) else None
-    if mcp:
-        issues.extend({'skill': r['skill'], 'target': r['instance'], 'service': r['service'],
-                       'mode': r['mode'], 'code': 'MCP_' + r['status'],
-                       'severity': 'warning' if r['optional'] else 'error'}
-                      for r in mcp['checks'] if not r['ready'])
     errors = sum(i['severity'] == 'error' for i in issues)
     incomplete = any(r['status'] != 'PASS' for r in native_results.values())
     pending = any(r['status'] in ('INSTALL_PENDING', 'UPDATE_PENDING') for r in copies)
@@ -490,10 +484,9 @@ def audit(args, native=False):
               'unregistered_native_packages': unregistered, 'native_builtin_excluded': builtin,
               'local_exclusions': [{'binding': k, 'management': 'local-only'} for k in config.get('excluded_bindings', {})],
               'claude_legacy_commands': legacy_commands(config), 'native_discovery': native_results,
-              'mcp_checked': mcp is not None, 'mcp': mcp,
               'inactive_agent_kinds': sorted(set(TARGETS) - {r['kind'] for r in agent_adapters.configured(config)}),
               'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-              'limits': 'File identity, metadata, declarations and optional native catalogs; MCP live checks require --mcp. No model/business tool is executed or native config changed.'}
+              'limits': 'File identity, metadata, dependency declarations and optional native skill catalogs. MCP declarations are validated offline; service availability is not checked. No model/business tool is executed or native config changed.'}
     if args.output:
         save(Path(args.output).expanduser().resolve(), result)
     return result
@@ -526,11 +519,11 @@ def index(args):
             lines.append('| [' + record['name'] + '](' + path + ') | ' + summary.replace('|', '\\|') +
                          ' | ' + record['origin']['kind'] + ' | ' + agents + ' | ' + deps + ' |')
         lines.append('')
-    mcp_rows = [(r, s) for r in manifest['packages'].values() for s in skill_mcp.specs(r)]
+    mcp_rows = [(r, s) for r in manifest['packages'].values() for s in skill_dependencies.mcp_specs(r)]
     if mcp_rows:
         lines.extend(['## MCP 工具依赖', '',
-                      '下表只声明能力；本机连接与凭据不随技能分发。普通 audit 不连接 MCP；显式 `mcp check --live` 或 `doctor --mcp` 验证。', '',
-                      '| 技能 | 服务 / 模式 | 接入 | 上游工具 | 范围 |', '| --- | --- | --- | --- | --- |'])
+                      '下表声明技能所需能力；audit 只校验声明和包内引用。服务可用性由使用者在目标环境通过客户端或外部工具核验，连接与凭据由对应工具管理。', '',
+                      '| 技能 | 服务 / 模式 | 使用方式 | 所需工具 | 条件 |', '| --- | --- | --- | --- | --- |'])
         for r, s in sorted(mcp_rows, key=lambda pair: (pair[0]['name'], pair[1]['service'], pair[1]['mode'])):
             lines.append('| ' + r['name'] + ' | ' + s['service'] + ' / ' + s['mode'] + ' | ' + s['via'] +
                          ' | ' + ', '.join(s['tools']) + ' | ' + ('可选模式' if s['optional'] else '必需') + ' |')

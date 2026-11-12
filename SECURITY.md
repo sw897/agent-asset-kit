@@ -8,7 +8,7 @@ Preview target paths and changes before applying. Deployment and trials bind app
 
 Acceptance prepares package and metadata snapshots before switching content. A failed write rolls back only recognized versions; interrupted receipts block further operations until reviewed recovery in the original workspace. Recovery preserves prepared copies and refuses subsequent edits. Legacy receipts without complete snapshots require manual reconciliation.
 
-Native discovery starts the configured clients in catalog modes without a model turn. Optional live MCP checks contact the selected local tool service; explicit MCP connect can change its shared configuration. Ordinary collect, sync and deploy do not invoke business MCP tools.
+Native discovery starts the configured clients in skill catalog modes without a model turn. MCP capability declarations are validated offline for structure and package references. Connection state, authentication, aggregate entries and tool availability are maintained and verified by the target client or external tools. Asset workflows do not call an MCP manager or change MCP configuration; legacy local connection records are left untouched.
 
 For public issues, provide a minimal reproduction with synthetic data. Keep credentials, private skill libraries and personal logs out of public reports.
 

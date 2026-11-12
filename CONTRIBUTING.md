@@ -1,6 +1,6 @@
 # Contributing
 
-Use Python 3.11 or later. Keep the CLI installable without runtime Python dependencies. Third-party clients, Git, Gitleaks, and optional MCP tools remain external programs.
+Use Python 3.11 or later. Keep the CLI installable without runtime Python dependencies. Third-party Agent clients, Git and Gitleaks remain external programs. Skill capability requirements are portable declarations; service connections, authentication and aggregate entries belong to clients or external managers.
 
 Keep executable source under `src/agent_asset_kit/`, reusable blank library files under `src/agent_asset_kit/resources/library/`, and synthetic scenarios under `tests/`. Do not add personal skills, profiles, live credentials, native databases, or raw session logs.
 

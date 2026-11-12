@@ -31,6 +31,6 @@
 
 本地提交和合并用 `aak sync --agent codex --message "Update reviewed assets" --local-only`。跨设备按资产库的远端配置和发布授权同步；另一台设备在它自己的库执行 refresh，再按需 share。本机目标、路径、凭据及运行环境留在本机。批量部署先用 `aak deploy` 看计划，确认目标和冲突后用 `aak deploy --apply --plan 计划ID`。对于已入库技能的新修订，只有需要保持其他目标的正式版本时才使用 `revision --trial`、`trial` 和 `promote`。
 
-可用 `aak 子命令 --help` 查看参数。外部候选筛选用 discover、inspect、fetch、evaluate；保留第三方许可与上游提交。共享画像和约定用 note，待核实内容用 --inbox。MCP 依赖声明、检查和显式接入见 `aak mcp --help`。升级 CLI 后核对版本、指南和既有目标，再按需要更新 attach 入口。推送、恢复删除项或改变启用目标，按本次请求和库内授权执行。
+可用 `aak 子命令 --help` 查看参数。外部候选筛选用 discover、inspect、fetch、evaluate；保留第三方许可与上游提交。共享画像和约定用 note，待核实内容用 --inbox。技能的 `requirements.mcp` 保留逻辑服务、模式、使用方式、工具与包内说明引用；用 `aak audit` 静态校验、`aak index --agent codex --reviewed` 展示依赖。MCP 账号、连接和聚合入口由客户端或外部工具管理，实际可用性在目标环境核验。升级 CLI 后核对版本、指南和既有目标，再按需要更新 attach 入口。推送、恢复删除项或改变启用目标，按本次请求和库内授权执行。
 
 入库写入异常会尝试安全回退，原候选保留。进程中断或后续编辑阻止回退时，用 `aak status` 查看未完成入库，在收据的原工作区审阅包、备份和元数据，再运行 `aak accept --recover 收据ID --agent codex --reviewed` 恢复到入库前状态。恢复拒绝覆盖新编辑；完成后可重试原候选。旧格式收据缺少恢复快照时保留现场并人工核对。

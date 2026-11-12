@@ -27,7 +27,6 @@ from . import skill_sources
 from . import skill_trials
 from . import skill_merge
 from . import skill_versions
-from . import skill_mcp
 from . import skill_acceptance
 
 PUBLISH_FILES = {'AGENTS.md', 'README.md', 'USER.md', 'MEMORY.md', '.gitignore', '.gitattributes', '.agent-asset-kit.json', 'LICENSE'}
@@ -653,7 +652,6 @@ def main(argv=None, initialize_default=False):
         p.add_argument('--target', choices=['all', *agent_adapters.KINDS], default='all')
         p.add_argument('--instance')
         p.add_argument('--output')
-        p.add_argument('--mcp', action='store_true', help='read-only live mcplink dependency checks; no native writes')
         if command == 'doctor':
             p.add_argument('--native', action='store_true', help='initialize clients to read catalogs; no model turn')
     p = sub.add_parser('index')
@@ -663,27 +661,6 @@ def main(argv=None, initialize_default=False):
     p.add_argument('--skill', required=True)
     p.add_argument('--target', choices=agent_adapters.KINDS, required=True)
     p.add_argument('--instance')
-    p = sub.add_parser('mcp', help='declare/check MCP dependencies and explicitly connect through mcplink')
-    mcp = p.add_subparsers(dest='action', required=True)
-    p = mcp.add_parser('check')
-    p.add_argument('--skill')
-    p.add_argument('--target', choices=['all', *agent_adapters.KINDS], default='all')
-    p.add_argument('--instance')
-    p.add_argument('--mode', help='require readiness for this declared mode, including optional modes')
-    p.add_argument('--live', action='store_true', help='query mcplink status/tools; never call business tools')
-    p = mcp.add_parser('bind')
-    p.add_argument('--service', required=True)
-    p.add_argument('--connection', required=True)
-    p.add_argument('--source', action='append', help='explicit INSTANCE=DISCOVERED_SOURCE_ID; repeatable')
-    p.add_argument('--native-name', action='append', help='select an existing alias: INSTANCE=NATIVE_NAME; repeatable')
-    p.add_argument('--reviewed', action='store_true')
-    p = mcp.add_parser('connect')
-    p.add_argument('--skill', required=True)
-    p.add_argument('--service', required=True)
-    p.add_argument('--instance', action='append', required=True)
-    p.add_argument('--apply', action='store_true')
-    p.add_argument('--plan')
-    p.add_argument('--reviewed', action='store_true')
     for command in ('deploy', 'attach'):
         p = sub.add_parser(command)
         p.add_argument('--apply', action='store_true')
@@ -865,8 +842,6 @@ def main(argv=None, initialize_default=False):
                 result = skill_audit.index(args)
             elif command == 'resolve':
                 result = skill_audit.resolve(args)
-            elif command == 'mcp':
-                result = skill_mcp.command(args)
             elif command == 'agent':
                 result = agent_adapters.manage(args)
             elif command == 'discover':

@@ -14,6 +14,8 @@ Collect native skill changes before refreshing or deploying. Review complete can
 
 Separate source, service classification, target bindings, conditional dependencies and release status. Update manifest hashes after reviewed edits. Trial revisions affect selected targets; promotion is explicit. Preserve third-party licenses and upstream identity.
 
+Keep skill capability declarations portable. AAK validates MCP declaration structure and package references offline; verify service availability in the target client or an external tool. Accounts, connection bindings, aggregate entries and credentials remain with their owning tools.
+
 Preview deployment and apply its exact current plan. Keep client installation paths, instance aliases, candidates, baselines, runtime environments and backups outside shared Git content. Independent native copies must not link back to the library. A successful copy does not establish native discovery, model adoption or business success.
 
 Use `aak sync --local-only` for reviewed local commits and ordinary merges. Remote publication needs explicit authorization and configured checks. Do not force push, automatically stash, discard unknown changes or overwrite project rules. Keep test evidence in ignored artifacts/.
