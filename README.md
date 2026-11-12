@@ -16,10 +16,10 @@ AgentAssetKit is a CLI for AI agents to manage reusable agent assets across devi
 
 ## 安装
 
-准备 Python 3.11 或更新版本、Git 和 [Gitleaks](https://github.com/gitleaks/gitleaks#installing)。运行 `gitleaks version` 应能看到版本号。从 GitHub 获取 v1.0.0 后，在源码目录运行下方安装命令：
+准备 Python 3.11 或更新版本、Git 和 [Gitleaks](https://github.com/gitleaks/gitleaks#installing)。运行 `gitleaks version` 应能看到版本号。从 GitHub 获取 `main` 的当前源码后，在源码目录运行下方安装命令。
 
 ```sh
-git clone --branch v1.0.0 https://github.com/sw897/agent-asset-kit.git
+git clone --branch main https://github.com/sw897/agent-asset-kit.git
 cd agent-asset-kit
 ```
 
@@ -67,6 +67,34 @@ aak share fixture-skill --to claude
 
 换成自己的技能时，把第一条命令中的目录替换为含 `SKILL.md` 的实际路径，保存和分发使用安装结果中的技能名。也支持 GitHub 仓库和 skills.sh 技能链接。仓库中有多个技能时用 `--skill NAME` 选择。通过链接保存的第三方技能保留来源、提交和许可。用 `aak agent list` 查看本机配置；有多个同类实例时用 `--instance` 选择。
 
+## 从资产库到一次完整任务
+
+除了管理技能，你也可以让 Agent 在处理项目任务时查阅自己的偏好、共享方法和项目入口。
+
+**接入一次。** 完成上面的试用后，进入自己的资产库，预览并应用全局入口。沿用默认库时运行下方命令，自定义库则进入对应目录。
+
+```sh
+cd ~/.agent-asset-kit
+aak attach
+aak attach --apply
+```
+
+新会话可以通过这个入口找到资产库，当前会话需要重新读取入口。
+
+**直接交代任务。** 在项目目录或资产库中告诉 Agent 你的目标，例如下面这句话。
+
+> 参考我的资产库，给网站增加搜索功能，需要时配合修改 API。先核对相关项目的约定和验证命令，完成后把验证过的通用方法整理到相应技能。
+
+Agent 通过 `aak guide` 查用法，按需读取 `USER.md`、`MEMORY.md` 和相关技能。有项目索引时，从中找到本次任务涉及的仓库，也可以直接使用你给出的项目路径。进入目标仓库后，读取现有 `AGENTS.md` 与更具体的约定，在对应项目中执行修改和验证，提交按本次授权处理。
+
+**收回有用的改进。** 如果 Agent 改进了已安装的技能副本，审阅后用 `aak save 技能名 --from codex` 收回，需要给其他 Agent 使用时再运行 `aak share 技能名 --to claude`。项目特有的约定写入项目文档，可复用的方法整理进所属技能。资产库的提交和跨设备同步见下方进阶工作流。
+
+## 可选的项目索引
+
+需要在多个项目间导航时，让 Agent 将资产库内的 `templates/project-index.md` 另存为 `agents/projects.md`，填写项目用途、仓库地址、约定入口和关联项目。新建的资产库自带模板，已有库也可以从工具项目复制。[项目索引模板](src/agent_asset_kit/resources/library/templates/project-index.md)
+
+索引是一份按需查阅的 Markdown 文件。各设备的实际克隆路径可按需记录在 Git 忽略的 `.local/project-paths.md`，以项目名对应。Agent 根据当前任务读取相关条目，进入项目后核对现场。
+
 ## 你的资产库里有什么？
 
 首次在库外试用会默认建立 `~/.agent-asset-kit/`。这是你自己的资产库。以下是常用位置，`.local/` 中的文件由工具在本机操作时生成。
@@ -81,8 +109,10 @@ aak share fixture-skill --to claude
 │   ├── custom/        自定义技能，每个目录是一个完整的 SKILL.md 包
 │   ├── third-party/   引入的第三方技能，保留来源与许可
 │   └── manifest.json  登记技能 ID、内容哈希和分发目标
-├── agents/            客户端接入和工具使用说明
-├── templates/agents/  可复用的项目约定模板
+├── agents/            客户端接入、工具说明与可选的 projects.md 项目索引
+├── templates/
+│   ├── agents/        可复用的项目约定模板
+│   └── project-index.md  可选的项目索引模板
 └── .local/            本机路径、候选修改和部署记录，Git 忽略
 ```
 

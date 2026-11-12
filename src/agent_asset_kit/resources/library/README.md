@@ -8,6 +8,12 @@ Try a local directory containing SKILL.md with `aak try ./my-skill --to codex`.
 Use the name printed by that command in `aak save NAME` to keep your edited copy.
 Run `aak share NAME --to claude` when you want a separate copy on another Agent.
 
+## Project tasks
+
+Ask the Agent to consult your library when working on a project. It can read your preferences, shared context and relevant skills, then follow the target project's own instructions and verification commands. Review improvements to an installed skill and keep them with `aak save NAME --from codex`, then share them when needed.
+
+For optional navigation across projects, copy `templates/project-index.md` to `agents/projects.md` and fill in project purposes, repository URLs, instruction paths and related projects. Device-specific clone paths can optionally go in ignored `.local/project-paths.md`. Read only the entries relevant to the task. [Project index template](templates/project-index.md)
+
 ## Advanced collection
 
 On a fresh library, `try` and `share` prepare the local configuration automatically. If collection is your first command, run `aak configure` once.

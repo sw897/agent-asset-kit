@@ -19,6 +19,12 @@
 - 分发：`aak share 技能名 --to claude`。各 Agent 获得完整独立副本。在 Claude 改好后，可用 `aak save 技能名 --from claude` 收回。
 - 确认结果：向用户报告实际来源、目标和安装位置。需要核对客户端能否发现技能时用 `aak doctor --native --target codex`。实际使用效果要在目标客户端验证。
 
+## 结合资产库处理项目任务
+
+用户要求结合资产库处理项目任务时，按需读取 `USER.md`、`MEMORY.md` 和相关技能。需要跨项目导航时，可创建 `agents/projects.md`，记录项目用途、仓库地址、约定入口与关联项目。库内有 `templates/project-index.md` 时可直接复制，已有索引时只查阅相关条目。本机克隆路径可按需放入 Git 忽略的 `.local/project-paths.md`。用户给出的项目路径也可直接使用。
+
+操作前定位并读取目标仓库现有的 `AGENTS.md` 与更具体约定，在对应项目执行验证和经授权的 Git 操作。任务结束后，将验证过的通用方法整理到所属技能，项目特有的约定写回项目文档。已安装技能副本有改进时，审阅后用 `aak save 技能名 --from codex` 收回，再按需 share。
+
 ## 回流和跨设备维护
 
 原生目录还有其他修改时先用 `aak collect` 保存候选。已配置远端的库用 `aak refresh` 拉取更新；在主库运行 `aak workspace --agent codex`，进入返回的工作区审阅。核对完整内容、来源许可、依赖与验证结果后，用 `aak accept 候选ID --agent codex --reviewed` 接受；直接编辑已入库技能后用 `aak revision --skill-id ID --agent codex --reviewed` 登记。双方都改过时用 `aak merge --candidate 候选ID` 比较共同基线与双方内容，审阅并 finalize，再接受新候选。副本缺失时保留库内版本。
