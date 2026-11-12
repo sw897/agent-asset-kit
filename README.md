@@ -147,6 +147,14 @@ aak catalog
 
 可选远端同步当前保留对 **GitHub 私有资产库** 的校验，推送时需要匹配的 `origin`、已认证的 `gh` 和本机发布授权。工具代码本身的公开发布与用户资产库的私有同步分别管理。初次本地使用不需要 GitHub。
 
+## 和 Microsoft APM 的区别
+
+[Microsoft APM](https://microsoft.github.io/apm/)（Agent Package Manager）是面向项目的 agent 依赖管理器。项目在 `apm.yml` 中声明技能、提示词、插件和 MCP 服务，克隆后运行 `apm install`，即可按锁文件在所支持的客户端上得到同一套环境。它解决的是团队克隆仓库后，agent 配置可复现的问题。
+
+aak 管理的是你自己的个人 Git 资产库：技能、偏好、跨 Agent 约定和可选的项目索引。正式来源在资产库，各客户端目录里是独立的完整副本，可在多台设备和多个 Agent 之间试用、收回和分发。项目特有的约定仍写在所属项目中。
+
+两者可以一起使用，定位不是互相替代。项目级的可复现依赖用 APM；跨设备、跨 Agent 的个人资产用 aak。
+
 ## 开发与验证
 
 ```sh
