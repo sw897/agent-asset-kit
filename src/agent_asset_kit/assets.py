@@ -630,6 +630,9 @@ def main(argv=None):
         p.add_argument('--output')
         if command == 'doctor':
             p.add_argument('--native', action='store_true', help='initialize clients to read catalogs; no model turn')
+        else:
+            p.add_argument('--library-only', action='store_true',
+                           help='validate tracked paths, reviewed packages, references and declarations without local Agent/runtime checks')
     p = sub.add_parser('index')
     p.add_argument('--agent', required=True)
     p.add_argument('--reviewed', action='store_true')

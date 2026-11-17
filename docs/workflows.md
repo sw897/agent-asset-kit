@@ -95,6 +95,8 @@ aak deploy --apply --plan PLAN_ID
 
 `audit` 核对包、引用、依赖声明和副本；`doctor --native` 进一步读取真实客户端的技能目录。服务可用性、模型采用和业务任务效果需要在目标环境核验。
 
+Home Repo 的 CI 可以运行 `aak audit --library-only --output artifacts/library-audit.json`。它检查 Git 跟踪路径的可移植性、包的字节与逻辑模式、登记、技能引用、依赖声明及不可变正式版本，无需 `.local/config.json`、Agent 安装或业务依赖。不读取本机基线、试用状态或原生目录，不检查命令与运行环境。包含正式版本指针的库应使用完整 Git 历史；浅克隆缺少所需提交会明确失败。该模式不能搭配本机 `--target` 或 `--instance` 选择。
+
 macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装；不会后台接受候选或发布。其他平台调度尚未实现。
 
 ## 技能依赖声明

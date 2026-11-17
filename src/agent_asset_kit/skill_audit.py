@@ -16,7 +16,8 @@ import threading
 import time
 
 from .assetlib import (ROOT, LOCAL, Stop, atomic, cfg, files_in, inventory, key,
-                      load, native_path, package, registry, relative, save, tree_hash, read_native, ACTIVE_TRIAL_STATES)
+                      load, native_path, package, registry, relative, save, tree_hash, read_native, ACTIVE_TRIAL_STATES,
+                      git, portable_paths)
 from . import agent_adapters
 from . import skill_dependencies
 from .skill_versions import effective
@@ -362,9 +363,14 @@ def discover(target, config, instance=None):
 
 
 def audit(args, native=False):
-    config = cfg()
+    library_only = getattr(args, 'library_only', False)
+    if library_only and (native or args.target != 'all' or getattr(args, 'instance', None)):
+        raise Stop('a library-only audit cannot select local Agent targets or instances')
+    config = {'agents': {}} if library_only else cfg()
+    if library_only and (ROOT / '.git').exists():
+        portable_paths(filter(None, git('ls-files', '-z').stdout.split('\0')))
     manifest, owners = registry()
-    baselines = load(LOCAL / 'baselines.json', {})
+    baselines = {} if library_only else load(LOCAL / 'baselines.json', {})
     issues = contracts(manifest)
     references, reference_issues = reference_checks(manifest)
     issues.extend(reference_issues)
@@ -373,7 +379,7 @@ def audit(args, native=False):
                                   if row['kind'] in targets(args.target) and
                                   (not getattr(args, 'instance', None) or row['id'] == args.instance)))
     trials = {}
-    for path in (LOCAL / 'trials').glob('*/trial.json'):
+    for path in ([] if library_only else (LOCAL / 'trials').glob('*/trial.json')):
         trial = load(path)
         if trial.get('state') in ACTIVE_TRIAL_STATES:
             trials.update({key(b): trial for b in trial.get('bindings', [])})
@@ -382,7 +388,7 @@ def audit(args, native=False):
     for ident, record in sorted(manifest['packages'].items(), key=lambda p: p[1]['name']):
         item = {'skill_id': ident, 'name': record['name'], 'category': record.get('category'),
                 'kind': record['origin']['kind'], 'bindings': record['bindings'],
-                'requirements': command_checks(record, config), 'canonical_sha256': record['sha256']}
+                'requirements': [] if library_only else command_checks(record, config), 'canonical_sha256': record['sha256']}
         item['mcp_declarations'] = record.get('requirements', {}).get('mcp', [])
         for requirement in item['requirements']:
             if requirement['status'] == 'MISSING':
@@ -441,7 +447,7 @@ def audit(args, native=False):
                 issues.append({'skill': record['name'], 'target': binding['agent'],
                                'code': 'COPY_CHECK_FAILED', 'severity': 'error'})
             copies.append(row)
-    sources, builtin = inventory(config)
+    sources, builtin = ([], []) if library_only else inventory(config)
     unregistered = [dict(source=source['source'], bindings=[b for b in source['bindings'] if b['agent'] + ':' + b['path'] not in owners])
                     for source in sources if any(b['agent'] + ':' + b['path'] not in owners for b in source['bindings'])]
     native_results = {r['id']: discover(r['kind'], config, r['id']) for r in agent_adapters.configured(config)
@@ -479,14 +485,17 @@ def audit(args, native=False):
     incomplete = any(r['status'] != 'PASS' for r in native_results.values())
     pending = any(r['status'] in ('INSTALL_PENDING', 'UPDATE_PENDING') for r in copies)
     status = 'BLOCKED' if errors else 'UNVERIFIED' if incomplete else 'PENDING' if pending else 'PASS'
-    result = {'status': status, 'canonical_packages': len(packages),
+    result = {'status': status, 'scope': 'library-only' if library_only else 'local',
+              'canonical_packages': len(packages),
               'packages': packages, 'copies': copies, 'issues': issues, 'references': references,
               'unregistered_native_packages': unregistered, 'native_builtin_excluded': builtin,
               'local_exclusions': [{'binding': k, 'management': 'local-only'} for k in config.get('excluded_bindings', {})],
               'claude_legacy_commands': legacy_commands(config), 'native_discovery': native_results,
-              'inactive_agent_kinds': sorted(set(TARGETS) - {r['kind'] for r in agent_adapters.configured(config)}),
+              'inactive_agent_kinds': [] if library_only else sorted(set(TARGETS) - {r['kind'] for r in agent_adapters.configured(config)}),
               'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-              'limits': 'File identity, metadata, dependency declarations and optional native skill catalogs. MCP declarations are validated offline; service availability is not checked. No model/business tool is executed or native config changed.'}
+              'limits': ('Tracked path portability, reviewed package identity, immutable stable releases, metadata, references and dependency declarations only. '
+                         'Local configuration, runtime requirements and native clients are not checked.' if library_only else
+                         'File identity, metadata, dependency declarations and optional native skill catalogs. MCP declarations are validated offline; service availability is not checked. No model/business tool is executed or native config changed.')}
     if args.output:
         save(Path(args.output).expanduser().resolve(), result)
     return result

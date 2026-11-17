@@ -97,4 +97,6 @@ aak deploy --apply --plan 计划ID
 
 用 `aak audit` 检查文件、登记和依赖，用 `aak doctor --native --target codex` 检查客户端是否发现技能。模型采用和实际任务效果另行验证，报告说明验证到哪一步。MCP 连接与认证由客户端或外部工具维护，技能分发不自动配置它们。
 
+Home Repo 的 CI 用 `aak audit --library-only` 校验已审包、引用、依赖声明、正式版本和 Git 跟踪路径，无需配置本机 Agent 或准备业务运行环境。引用了历史正式版本时，CI 需要完整 Git 历史。该模式不检查原生副本或客户端发现；个人库通过公开命令消费 AAK，通用工具测试留在 AAK 仓库。
+
 跨设备同步、上游技能引入、冲突合并、有限试用和中断恢复见[进阶工作流](https://github.com/sw897/agent-asset-kit/blob/main/docs/workflows.md)。具体参数用 `aak 子命令 --help` 查询。
