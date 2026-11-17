@@ -6,12 +6,12 @@
 | --- | --- | --- |
 | 稳定偏好与协作习惯 | USER.md | 保持精简，确认后修改 |
 | 共享核心事实与查阅入口 | MEMORY.md | 只保留全局需要的核心内容 |
-| 已确认共享事实的明细与来源 | memory/shared/、sources.md | 标明来源、时间和适用范围 |
+| 已确认共享事实的明细与来源 | memory/shared/、memory/sources.md | 标明来源、时间和适用范围 |
 | 待核实的全局候选 | memory/inbox/ | 尚未确认的内容不升级为全局事实 |
 | 操作方法、领域规则、服务环境和执行资源 | 所属 skills/ 包及 references/ | 保留必要的上下文，使用前核对现场 |
 | 客户端接入与工具说明 | agents/ | 区分平台、实例、版本和验收范围 |
 | 项目用途、仓库关系与约定入口 | 可选的 agents/projects.md | 从模板按需建立，按任务查阅并核对目标项目约定 |
-| 可复用项目约定 | templates/agents/ | 基础模板与按需模块，不含个人资料 |
+| 可复用项目约定 | templates/agents/ | 静态共性约束与显式选择的领域模块，不记录项目事实或个人资料 |
 | 完整知识正文或完整项目历史 | 原知识库或项目 | 资产库只保留执行所需的入口与整理后的知识 |
 | 客户端路径、项目克隆路径、实例别名、候选、基线、备份、收据与运行环境 | .local/ 或原生目录外备份 | 保持本机，不进入共享版本 |
 | MCP 账号、连接、聚合入口与工具范围 | 对应客户端或外部管理工具 | 在目标环境核验，技能包只声明所需能力 |
@@ -29,13 +29,32 @@
 - **条件依赖** 按模式声明所需的其他技能、命令、文件、Python 环境或 MCP 能力。
 - **版本状态** 区分待试用修订与统一正式版本，不把试用传播给所有目标。
 
-`schemas/manifest.schema.json` 给出包清单的基础交换结构；运行时还会校验内容哈希、文件模式、路径、原生绑定与部署状态。分类、来源、目标与运行依赖不能相互替代。
+工具仓库的 [schemas/manifest.schema.json](../schemas/manifest.schema.json) 给出包清单的基础交换结构；它不会复制到 Home Repo。运行时还会校验内容哈希、文件模式、路径、原生绑定与部署状态。分类、来源、目标与运行依赖不能相互替代。
+
+Home Repo 的 `skills/manifest.json` 是包登记，`categories.json` 是分类定义，`releases.json` 保存正式版本和待试用内容指针，`decisions.json` 保存已审来源决策。技能 ID 来自 manifest 的 `packages` 键，技能名和客户端安装目录名不能代替稳定 ID。`skills/README.md` 可由 `aak index --agent codex --reviewed` 重建，长期手写说明应放在所属包或其他文档中。
+
+一个技能包至少包含首行开始的 frontmatter、非空 `name` 和 `description`，以及完整执行资源：
+
+```markdown
+---
+name: example-skill
+description: Explain when this skill should be used.
+---
+
+Describe the workflow and link to scripts or references within this package.
+```
+
+建议包目录和 `name` 使用一致的简短名称；工具的字段读取不替代客户端的 YAML 解析和发现规则。自建包放在 `skills/custom/名称/`，经完整审阅后用 `register` 登记。后续内容编辑用 `revision` 更新哈希，可执行意图变化显式声明；手改哈希不能代替内容审阅。
 
 MCP 能力声明沿用 `requirements.mcp`，由 `audit` 静态核对格式和包内引用，`index` 生成查阅入口。服务连接及运行可用性属于目标环境，由所选客户端或外部工具核验，不作为技能副本同步的一部分。
 
+依赖、分类和目标绑定由使用者审阅维护，不从客户端账号推导，也不自动安装所需软件或服务。具体声明和分发方式见[工作流](workflows.md#技能依赖声明)。
+
 ## 谁负责哪一层
 
-资产库是经过整理的跨 Agent 内容源。知识库和项目仍拥有各自正文与完整历史，客户端仍拥有原生身份、认证与记忆。AgentAssetKit 维护完整副本及回流关系，不把所有来源镜像到一个仓库。
+Home Repo 是经过整理的跨 Agent 个人资产库，保存个人资料与已入库技能等共享内容。AgentAssetKit（aak）单独安装，负责建库、维护资产，以及技能的试用、回流、分发和跨设备同步。各 Agent 使用完整独立的技能副本，修改经审阅后可保存回库。
+
+知识库和项目仍拥有各自正文与完整历史，客户端仍拥有原生身份、认证与记忆。aak 维护副本及回流关系，不把所有来源镜像到一个仓库。
 
 内容归属依靠使用者和 Agent 审阅；工具不会自动判断某个事实是否适合进入全局记忆。`note` 只接收明确声明为 global 的共享内容，其他执行上下文放入所属技能。
 

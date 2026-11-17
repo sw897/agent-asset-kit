@@ -1,6 +1,10 @@
 # Asset library maintenance
 
+This Home Repo stores personal context and reusable assets. AgentAssetKit (aak) is the separately installed tool for maintaining the library and managing independent skill copies, reviewed changes and synchronization across Agents and devices.
+
 Run `aak guide` for the installed version’s commands.
+
+The guide follows the installed tool version. Files and templates copied into this library are maintained here and are not automatically overwritten by tool upgrades.
 
 The default Home Repo is ~/agent-home, separate from the toolkit installation. Commands select an explicit --root, then AGENT_ASSET_KIT_ROOT, then an enclosing initialized library, then the default. For this library at a custom location, work inside it or pass its explicit root. Initialize only a new or empty directory; never adopt existing ordinary repositories.
 
@@ -14,6 +18,8 @@ Do not copy native identities, authentication, original memory stores, session l
 
 Collect native skill changes before refreshing or deploying. Review complete candidate files, provenance, dependencies and verification evidence. Use isolated workspaces for accepted changes. Preserve both sides of conflicts; missing copies do not authorize deletion or restoration.
 
+Run quick try/save/share commands only against the primary library. They write on explicit invocation and do not create a Git commit. Use collect and the candidate review workflow for other native copies. For bulk deployment, return to the clean committed primary main checkout and apply the exact previewed plan.
+
 Separate source, service classification, target bindings, conditional dependencies and release status. Update manifest hashes after reviewed edits. Trial revisions affect selected targets; promotion is explicit. Preserve third-party licenses and upstream identity.
 
 Keep skill capability declarations portable. AAK validates MCP declaration structure and package references offline; verify service availability in the target client or an external tool. Accounts, connection bindings, aggregate entries and credentials remain with their owning tools.
@@ -21,5 +27,7 @@ Keep skill capability declarations portable. AAK validates MCP declaration struc
 Preview deployment and apply its exact current plan. Keep client installation paths, instance aliases, candidates, baselines, runtime environments and backups outside shared Git content. Independent native copies must not link back to the library. A successful copy does not establish native discovery, model adoption or business success.
 
 Use `aak sync --local-only` for reviewed local commits and ordinary merges. Remote publication needs explicit authorization and configured checks. Do not force push, automatically stash, discard unknown changes or overwrite project rules. Keep test evidence in ignored artifacts/.
+
+Use `aak audit --library-only` for this library's CI without client or runtime setup. Generic tool tests stay in the AAK repository. Local audit may execute declared Python interpreters and native discovery starts reviewed client programs; neither proves model adoption or business success. The macOS scheduler collects only; tick also refreshes and applies deployment, so use it only when that workflow is authorized.
 
 Use only a library initialized with a valid AgentAssetKit marker. Preserve directory boundaries and unresolved trial ownership. Domain-specific paths can be part of reviewed private service knowledge; this does not permit native client state, credentials or complete project histories to enter the shared library.

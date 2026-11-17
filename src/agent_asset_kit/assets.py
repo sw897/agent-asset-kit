@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AgentAssetKit CLI: reviewed copies, isolated workspaces and project templates."""
+"""Manage personal context and reusable skills across AI agents and devices."""
 
 import argparse
 import difflib
@@ -610,15 +610,15 @@ def main(argv=None):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(prog='aak', description=__doc__)
-    parser.add_argument('--root', help='select a Home Repo; otherwise use the enclosing library or ~/agent-home (also accepted after the subcommand)')
+    parser.add_argument('--root', help='select a Home Repo; otherwise use AGENT_ASSET_KIT_ROOT, the enclosing library, then ~/agent-home (also accepted after the subcommand)')
     sub = parser.add_subparsers(dest='command_name', required=True)
     sub.add_parser('guide', help='read the bundled agent guide from any directory')
     sub.add_parser('init', help='create ~/agent-home and initialize Git; see aak init --help')
     from . import quick_skills
     quick_skills.commands(sub)
     p = sub.add_parser('configure')
-    p.add_argument('--home', default=str(Path.home()))
-    p.add_argument('--gitleaks')
+    p.add_argument('--home', default=str(Path.home()), help='local client home directory, separately from the Home Repo')
+    p.add_argument('--gitleaks', help='scanner executable path; otherwise find gitleaks on PATH')
     p.add_argument('--github-repository', default='', help='optional private asset repository in OWNER/REPO form')
     p.add_argument('--agents', help='explicit comma-separated local Agent kinds; otherwise detect installed homes/CLIs')
     for command in ('collect', 'refresh', 'status', 'catalog', 'tick'):
@@ -689,7 +689,7 @@ def main(argv=None):
     p.add_argument('--agent', required=True)
     p.add_argument('--message', required=True)
     p.add_argument('--local-only', action='store_true')
-    p.add_argument('--branch-only', action='store_true', help='publish an isolated codex/ branch for CI without merging main')
+    p.add_argument('--branch-only', action='store_true', help='publish an isolated assets/ or codex/ branch without merging main; requires publication authorization')
     p = sub.add_parser('init-project')
     p.add_argument('project')
     p.add_argument('--template', choices=['base', 'software', 'research', 'documents'], default='base')

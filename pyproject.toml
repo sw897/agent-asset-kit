@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-asset-kit"
 version = "1.0.0"
-description = "A CLI for AI agents to manage reusable agent assets, review skill edits and sync across devices."
+description = "A CLI for managing personal context and reusable skills across AI agents and devices."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
