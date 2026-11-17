@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -97,8 +99,10 @@ def main():
                   and instruction.read_text(encoding='utf-8').startswith('# Existing synthetic instruction\n'))
             installed = cli('try', ROOT / 'tests/fixtures/native-skill', '--to', 'codex')
             check('the trial uses the same Home Repo and prints a root-free save command', installed['library'] == str(default)
-                  and installed['next'] == 'aak save fixture-skill' and not (home / '.agent-asset-kit').exists())
-            saved = cli('save', 'fixture-skill')
+                  and '--root' not in installed['next'] and not (home / '.agent-asset-kit').exists())
+            save_command = ([shutil.which('pwsh') or 'powershell', '-NoProfile', '-NonInteractive', '-Command', installed['next']]
+                            if os.name == 'nt' else shlex.split(installed['next']))
+            saved = json.loads(run(save_command))
             check('save from the project returns edits to the default Home Repo', saved['library'] == str(default)
                   and cli('catalog')['packages'][saved['skill_id']]['name'] == 'fixture-skill')
             run(['git', '-C', default, 'config', 'user.name', 'Synthetic Home Repo'])

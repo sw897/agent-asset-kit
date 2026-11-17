@@ -125,7 +125,8 @@ def main():
         write(repo / 'skills/releases.json', releases)
 
         oid = run(['git', 'hash-object', '-w', '--stdin'], data='Synthetic tracked path\n').strip()
-        run(['git', 'update-index', '--add', '--cacheinfo', '100644,' + oid + ',CON.md'])
+        # Index-only fixture: let the public audit reject the path on Windows too.
+        run(['git', '-c', 'core.protectNTFS=false', 'update-index', '--add', '--cacheinfo', '100644,' + oid + ',CON.md'])
         check('nonportable tracked checkout fails', cli('audit', '--library-only', expected=2)['status'] == 'STOPPED')
         report['status'] = 'PASS'
     except Exception:
