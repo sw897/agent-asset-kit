@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable installed-CLI checks for common and legacy project templates."""
+"""Portable installed-CLI checks for static project instruction templates."""
 
 import argparse
 import hashlib
@@ -104,11 +104,12 @@ def main():
                   metadata(selected)['template'] == kind and base in body and
                   (TEMPLATES / 'modules' / (kind + '.md')).read_text(encoding='utf-8') in body and
                   'PROJECT_FACT_' not in body and '{{' not in body)
-        explicit = cli('init-project', target, '--purpose', 'LEGACY_PURPOSE_DO_NOT_COPY',
-                       '--command', 'LEGACY_COMMAND_DO_NOT_EXECUTE')
-        check('legacy arguments do not inject facts into common templates',
-              'LEGACY_PURPOSE_DO_NOT_COPY' not in proposed(explicit) and
-              'LEGACY_COMMAND_DO_NOT_EXECUTE' not in proposed(explicit))
+        plans = library / '.local/project-plans'
+        count = len(list(plans.iterdir()))
+        for option in ('--purpose', '--command'):
+            run(['aak', '--root', library, 'init-project', target, option, 'REMOVED_OPTION'], expected=2)
+            check(option + ' is rejected without a plan or target change',
+                  len(list(plans.iterdir())) == count and (target / 'AGENTS.md').read_bytes() == before)
         cli('apply-project', plan['plan'], expected=2)
         check('unreviewed application leaves the target unchanged', (target / 'AGENTS.md').read_bytes() == before)
         concurrent = original + 'Concurrent project constraint.\n'
@@ -128,30 +129,23 @@ def main():
         check('reviewed application can create previously absent instructions',
               created['applied'] and (empty / 'AGENTS.md').is_file())
 
-        legacy = work / 'legacy project 示例'
-        write(legacy / 'package.json', '{"name":"legacy-fixture"}\n')
-        write(library / 'templates/agents/base.md', '# {{PROJECT}}\n{{PURPOSE}}\n{{STACK}}\n{{COMMANDS}}\n')
-        write(library / 'templates/agents/modules/software.md', 'Module purpose: {{PURPOSE}}\n')
-        plans = library / '.local/project-plans'
+        write(library / 'templates/agents/base.md', '{{PROJECT}}\n')
         count = len(list(plans.iterdir()))
-        cli('init-project', legacy, '--template', 'software', expected=2)
-        check('legacy purpose requirement fails before writing a plan or target',
-              len(list(plans.iterdir())) == count and not (legacy / 'AGENTS.md').exists())
-        legacy_plan = cli('init-project', legacy, '--template', 'software', '--purpose', 'Synthetic legacy purpose',
-                          '--command', 'DO_NOT_EXECUTE_LEGACY_COMMAND')
-        body = proposed(legacy_plan)
-        check('existing custom project placeholders still render',
-              legacy.name in body and 'Synthetic legacy purpose' in body and
-              'JavaScript/TypeScript' in body and 'DO_NOT_EXECUTE_LEGACY_COMMAND' in body and '{{' not in body)
-        check('known placeholders also render inside an optional module', 'Module purpose: Synthetic legacy purpose' in body)
-        write(library / 'templates/agents/modules/software.md', '{{UNSUPPORTED_TEMPLATE_FIELD}}\n')
-        count = len(list(plans.iterdir()))
-        cli('init-project', legacy, '--template', 'software', '--purpose', 'Synthetic', expected=2)
-        check('unknown module fields cannot leak into a generated proposal',
-              len(list(plans.iterdir())) == count and not (legacy / 'AGENTS.md').exists())
+        cli('init-project', target, expected=2)
+        check('initialized target remains protected after template changes', (target / 'AGENTS.md').read_bytes() == value)
+        blank = work / 'static template check'
+        blank.mkdir()
+        cli('init-project', blank, expected=2)
+        check('base placeholders are rejected before writing a plan or target',
+              len(list(plans.iterdir())) == count and not (blank / 'AGENTS.md').exists())
+        write(library / 'templates/agents/base.md', base)
+        write(library / 'templates/agents/modules/software.md', '{{CUSTOM_FIELD}}\n')
+        cli('init-project', blank, '--template', 'software', expected=2)
+        check('module placeholders are rejected before writing a plan or target',
+              len(list(plans.iterdir())) == count and not (blank / 'AGENTS.md').exists())
         check('initialization does not commit or modify project code',
               (target / 'package.json').read_text(encoding='utf-8').startswith('{"name":"PROJECT_FACT_') and
-              not (target / '.git').exists() and not (legacy / '.git').exists())
+              not (target / '.git').exists() and not (blank / '.git').exists())
         report['status'] = 'PASS'
     except Exception as error:
         report.update(error=str(error), traceback=traceback.format_exc())
