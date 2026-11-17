@@ -41,20 +41,8 @@ def reviewed(args):
 def configure(args, on_request=False):
     if (LOCAL / 'config.json').exists():
         raise Stop('local configuration already exists; edit it explicitly')
-    home = Path(args.home).expanduser().resolve()
-    selected = args.agents.split(',') if getattr(args, 'agents', None) else None
-    if selected and set(selected) - set(agent_adapters.KINDS) - {'shared'}:
-        raise Stop('unknown Agent adapter in --agents')
-    agents = agent_adapters.initial(home, selected)
-    if on_request:
-        for kind in agent_adapters.KINDS:
-            if not agents[kind]['enabled']:
-                agents[kind]['on_request'] = True
-    value = {'home': str(home), 'publication_enabled': False,
-             'github_repository': args.github_repository,
-             'gitleaks': str(Path(args.gitleaks).resolve()) if args.gitleaks else shutil.which('gitleaks'),
-             'skill_roots': agent_adapters.defaults(home), 'agents': agents,
-             'instructions': {kind: row['instructions'] for kind, row in agents.items() if row.get('instructions')}}
+    value = agent_adapters.local_config(args.home, getattr(args, 'agents', None), args.gitleaks,
+                                        args.github_repository, on_request)
     save(LOCAL / 'config.json', value)
     return {'configured': True, 'publication_enabled': False,
             'enabled_agents': [row['id'] for row in agent_adapters.configured(value)]}
@@ -617,15 +605,15 @@ def recheck(args):
     return {'rechecked': args.deployment, 'checks': checks, 'replayed': False}
 
 
-def main(argv=None, initialize_default=False):
+def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(prog='aak', description=__doc__)
-    parser.add_argument('--root', help='select a personal asset library (also accepted after the subcommand)')
+    parser.add_argument('--root', help='select a Home Repo; otherwise use the enclosing library or ~/agent-home (also accepted after the subcommand)')
     sub = parser.add_subparsers(dest='command_name', required=True)
     sub.add_parser('guide', help='read the bundled agent guide from any directory')
-    sub.add_parser('init', help='create an empty asset library; see aak init --help')
+    sub.add_parser('init', help='create ~/agent-home and initialize Git; see aak init --help')
     from . import quick_skills
     quick_skills.commands(sub)
     p = sub.add_parser('configure')
@@ -797,9 +785,6 @@ def main(argv=None, initialize_default=False):
         p.add_argument('--reviewed', action='store_true')
     args = parser.parse_args(argv)
     try:
-        if initialize_default:
-            from .cli import initialize
-            initialize([str(ROOT), '--git'])
         with locked():
             command = args.command_name
             if command != 'status' and not (command == 'accept' and args.recover):
@@ -847,9 +832,14 @@ def main(argv=None, initialize_default=False):
                           'rollback': skill_trials.rollback, 'recover': skill_trials.recover,
                           'status': skill_trials.status}[args.action](args)
             elif command == 'status':
+                configuration = load(LOCAL / 'config.json', {})
+                git_initialized = (PRIMARY / '.git').exists()
                 result = {'workspace': str(ROOT), 'primary': str(PRIMARY),
-                          'publication_enabled': cfg()['publication_enabled'],
-                          'git': git('status', '--short', '--branch').stdout,
+                          'configured': bool(configuration), 'git_initialized': git_initialized,
+                          'enabled_agents': [row['id'] for row in agent_adapters.configured(configuration)],
+                          'publication_enabled': configuration.get('publication_enabled', False),
+                          'git': git('status', '--short', '--branch').stdout if git_initialized else '',
+                          'next': None if configuration else cli_display(ROOT) + ' configure --agents AGENT',
                           'pending_candidates': len(load(LOCAL / 'last-collection.json', {}).get('candidates', [])),
                           'pending_acceptances': skill_acceptance.pending(),
                           'last_tick': load(LOCAL / 'last-tick.json', {})}

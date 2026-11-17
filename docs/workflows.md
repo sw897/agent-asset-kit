@@ -2,6 +2,16 @@
 
 所有命令针对已初始化的个人资产库。保持目标库的 Git 身份由用户自行配置，Gitleaks 必须可执行。普通使用不需要任何业务 Skill 随工具安装。
 
+## 建库与目录选择
+
+`aak init --agents codex` 默认在 `~/agent-home`（Windows 为 `%USERPROFILE%\agent-home`）建立空白 Git 仓库并完成本机配置。Gitleaks 从 `PATH` 查找，也可通过 `--gitleaks` 指定。`init` 不提交、不连接远端；客户端入口仍需 `attach` 预览并用 `attach --apply` 应用。
+
+目录选择顺序为 `--root`、`AGENT_ASSET_KIT_ROOT`、当前目录及其父目录中的已初始化库，最后是 `~/agent-home`。因此默认库可在任意项目中操作，进入其他已初始化库时自动使用该库；`aak status` 可核对实际路径。
+
+自定义位置用 `aak init /path/to/agent-home --agents codex`，后续进入该库或显式选择 `--root`。`init` 的目录参数与 `--root`/环境变量同时存在时必须指向同一位置。`aak init` 默认初始化 Git，旧 `--git` 参数仍可使用；仅需文件框架可选 `--no-git`，使用同步前再初始化 Git。
+
+尚未建库时命令会提示先运行 `aak init`，不再由 `try` 隐式创建 `~/.agent-asset-kit`。旧位置的有效 AAK 库仍可通过 `--root` 或在库内使用；工具不自动搬迁，也不接管已有普通目录。
+
 ## 原生改动进入候选
 
 运行 `aak collect` 将新建或修改的完整 Skill 包快照保存到 `.local/candidates/`。它排除内置资源及运行环境，保留可执行文件意图，不复制认证或原生数据库。采集不会改写原生副本。

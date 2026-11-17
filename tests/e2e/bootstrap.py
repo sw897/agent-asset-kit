@@ -55,7 +55,7 @@ def main():
             check('CLI help includes init and explicit root', 'init' in run(entry + ['--help'], base) and '--root' in run(entry + ['--help'], base))
             check('guide works before setup and matches the packaged guide source',
                   run(entry + ['guide'], base) == (ROOT / 'src/agent_asset_kit/resources/agent-guide.md').read_text(encoding='utf-8')
-                  and not (base / '.agent-asset-kit').exists() and not (base / '.local').exists())
+                  and not (base / 'agent-home').exists() and not (base / '.agent-asset-kit').exists() and not (base / '.local').exists())
             stopped = cli('catalog', cwd=base, expected=2)
             check('unselected library is rejected without creating local state', stopped['status'] == 'STOPPED' and not (base / '.local').exists())
             result = cli('init', library, '--git', cwd=base)
@@ -128,7 +128,9 @@ def main():
             environment.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='url.' + upstream.as_uri() + '.insteadOf',
                                GIT_CONFIG_VALUE_0=url, GIT_ALLOW_PROTOCOL='file')
             source = 'example/quick-skill'
-            quick = quick_home / '.agent-asset-kit'
+            quick = quick_home / 'agent-home'
+            setup = cli('init', '--agents', 'codex,claude', cwd=base)
+            check('explicit setup selects the same visible Home Repo for all quick commands', setup['initialized'] == str(quick.resolve()))
             missing = cli('try', './missing-skill', '--to', 'codex', cwd=base, expected=2)
             check('missing local path produces a local error', 'local skill directory does not exist' in missing['reason'])
             choices = cli('try', source, '--to', 'codex', cwd=base, expected=2)

@@ -126,8 +126,9 @@ def install(args):
     receipt = load(saved_path)
     save_args = ['aak']
     cwd = Path.cwd().resolve()
+    from .cli import default_library
     inferred = next((p for p in (cwd, *cwd.parents) if (p / '.agent-asset-kit.json').is_file()),
-                    (Path.home() / '.agent-asset-kit').resolve())
+                    default_library().resolve())
     if ROOT != inferred:
         save_args.extend(['--root', str(ROOT)])
     save_args.extend(['save', name])

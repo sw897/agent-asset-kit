@@ -20,20 +20,20 @@ AgentAssetKit is a CLI for AI agents to create and maintain a personal Home Repo
 
 ```sh
 uv tool install --reinstall "git+https://github.com/sw897/agent-asset-kit.git@main"
-aak init agent-home --git
-cd agent-home
+aak init --agents codex
 ```
 
-`agent-home` 是示例目录名，可以更换。`init` 生成空白的资料框架并建立本地 Git 仓库，所需标记由工具自动创建。
+默认创建在用户目录下的 `~/agent-home`；Windows 为 `%USERPROFILE%\agent-home`。`init` 生成空白资料框架、建立 `main` 分支，并配置选定的客户端。使用多个客户端时写 `--agents codex,claude`，Gitleaks 从 `PATH` 自动查找。
 
-以后升级 aak，重新执行上面的安装命令。个人资料继续保存在自己的 Home Repo 中。
+Home Repo 与 aak 安装目录分开，升级或重装工具时个人资料继续保留。默认库创建后，日常命令可在任意项目目录运行，无需切换目录或重复填写路径。
+
+需要其他位置时用 `aak init /path/to/agent-home --agents codex`；后续进入该目录，或用 `aak --root /path/to/agent-home 子命令`。只创建框架可运行 `aak init`，稍后用 `aak configure --agents codex` 配置客户端。初始化只接受不存在或空的目录。
 
 ## 接入 Agent
 
-在 Home Repo 中选择本机实际使用的客户端。下面以 Codex 和 Claude Code 为例；修改 `--agents` 名单，并把扫描器路径换成实际的 Gitleaks 绝对路径：
+创建时已选好客户端，接着预览个人库入口：
 
 ```sh
-aak configure --agents codex,claude --gitleaks "扫描器绝对路径"
 aak attach
 ```
 
@@ -74,7 +74,7 @@ aak sync --agent codex --message "Initialize home repo" --local-only
 
 明确的项目任务也可以直接从项目开始。Agent 进入目标仓库后读取该项目的指南，在那里修改、验证并执行已获授权的 Git 操作。项目开发无需创建 aak 工作区，验证过的可复用方法可以整理进相关技能。
 
-单个技能的日常操作在 Home Repo 主目录执行：
+使用默认 Home Repo 时，下面的命令可以直接在当前项目中执行：
 
 - `aak try 来源 --to codex`：给指定 Agent 试用。来源可以是含 `SKILL.md` 的目录、GitHub 或 skills.sh 链接；有多个技能时用 `--skill 名称` 选择。
 - `aak save 技能名`：把实际使用的副本和修改收进库。多个来源时用 `--from codex` 指定，`--dry-run` 可先看变化。

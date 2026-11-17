@@ -100,6 +100,24 @@ def initial(home, selected=None):
     return result
 
 
+def local_config(home, agents=None, gitleaks=None, github_repository='', on_request=False):
+    """Build local setup for init/configure without writing client directories."""
+    home = Path(home).expanduser().resolve()
+    selected = None if agents is None else [name.strip() for name in agents.split(',') if name.strip()]
+    if selected is not None and (not selected or set(selected) - set(KINDS) - {'shared'}):
+        raise ValueError('choose known Agent adapters in --agents')
+    entries = initial(home, selected)
+    if on_request:
+        for kind in KINDS:
+            if not entries[kind]['enabled']:
+                entries[kind]['on_request'] = True
+    return {'home': str(home), 'publication_enabled': False,
+            'github_repository': github_repository,
+            'gitleaks': str(Path(gitleaks).expanduser().resolve()) if gitleaks else shutil.which('gitleaks'),
+            'skill_roots': defaults(home), 'agents': entries,
+            'instructions': {kind: row['instructions'] for kind, row in entries.items() if row.get('instructions')}}
+
+
 def manage(args):
     from .assetlib import LOCAL, Stop, cfg, save
     config = cfg()

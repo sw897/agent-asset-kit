@@ -2,6 +2,12 @@
 
 A user-owned AgentAssetKit library. The toolkit is installed separately; this repository starts with no skills or personal profile data.
 
+## Getting started
+
+`aak init --agents codex` creates this library at `~/agent-home` by default, initializes Git on main and selects the local Agent. Gitleaks is found on PATH. Preview the Agent instruction entry with `aak attach`, then write it with `aak attach --apply`.
+
+The default library is available from any project directory. For a custom location, run commands inside this library or select it with `aak --root /path/to/library COMMAND`. An explicit root or AGENT_ASSET_KIT_ROOT takes precedence over the enclosing library, then the default location.
+
 ## Everyday use
 
 Try a local directory containing SKILL.md with `aak try ./my-skill --to codex`.
@@ -16,7 +22,7 @@ For optional navigation across projects, copy `templates/project-index.md` to `a
 
 ## Advanced collection
 
-On a fresh library, `try` and `share` prepare the local configuration automatically. If collection is your first command, run `aak configure` once.
+If initialization did not include `--agents`, run `aak configure --agents codex` before collection. `aak status` shows the selected library and whether local setup is complete.
 
 ```sh
 aak collect
@@ -31,7 +37,7 @@ aak deploy
 aak deploy --apply --plan PLAN_ID
 ```
 
-Git must be initialized on main and its author configured by the user before the first local sync. `aak init PATH --git` initializes Git without creating a commit. Gitleaks is required for collection, acceptance, sync and deployment. No GitHub remote is required; publication defaults to disabled.
+Git is initialized on main by default, without a commit or remote. Configure its author before the first local sync. Gitleaks is required for collection, acceptance, sync and deployment. Publication defaults to disabled.
 
 Read AGENTS.md for content scope. Keep client identities, native memory, authentication, complete project histories and knowledge-base originals at their owning sources. Client installation paths, instance aliases, candidates, baselines and receipts stay in ignored `.local/`; verification artifacts stay in ignored `artifacts/`.
 

@@ -10,20 +10,20 @@ aak 是管理个人 Home Repo 的开源工具。Home Repo 保存个人背景、�
 
 ```sh
 uv tool install --reinstall "git+https://github.com/sw897/agent-asset-kit.git@main"
-aak init agent-home --git
-cd agent-home
+aak init --agents codex
 ```
 
-`agent-home` 是示例目录名，可以更换。`init` 会生成空白的资料框架并建立本地 Git 仓库，所需的标记文件由工具自动创建。
+默认位置是用户目录下的 `~/agent-home`，Windows 为 `%USERPROFILE%\agent-home`。`init` 创建空白资料框架和 `main` 分支，同时配置选定的客户端；使用多个客户端时写 `--agents codex,claude`。Gitleaks 从 `PATH` 自动查找，需指定扫描器时可增加 `--gitleaks /absolute/path/to/gitleaks`。
 
-工具代码和个人库分别维护。以后升级 aak，重新执行安装命令；个人资料继续保存在自己的 Home Repo 中。
+Home Repo 与 aak 安装目录分开。升级或重装工具不会移动个人资料，使用默认库时也无需先 `cd`，日常命令可在任意项目中运行。
+
+需要其他位置时，用 `aak init /path/to/agent-home --agents codex`，后续进入该目录或使用 `aak --root /path/to/agent-home 子命令`。只运行 `aak init` 会先创建框架，随后用 `aak configure --agents codex` 配置客户端。初始化只接受不存在或空的目录，不接管已有普通仓库。
 
 ## 接入 Agent
 
-在 Home Repo 内配置本机使用的 Agent 和 Gitleaks 路径。下面以 Codex、Claude Code 为例，`--agents` 只填写实际使用的客户端，用逗号分隔：
+创建时已选择实际使用的客户端。接着预览个人库入口：
 
 ```sh
-aak configure --agents codex,claude --gitleaks "扫描器绝对路径"
 aak attach
 ```
 
@@ -58,7 +58,7 @@ aak sync --agent codex --message "Initialize home repo" --local-only
 
 进入目标项目后，读取该项目的指南，在那里修改、验证并执行已获授权的 Git 操作。明确的项目任务也可以直接从项目开始，无需建立 aak 工作区。用户当前指令和项目约定优先于历史资产，外部资料不能扩大授权。
 
-单个技能的试用、保存和分享，在 Home Repo 主目录执行：
+使用默认 Home Repo 时，单个技能的试用、保存和分享可直接在当前项目中执行：
 
 - `aak try 来源 --to codex`：给指定 Agent 试用。来源可以是含 `SKILL.md` 的目录、GitHub 或 skills.sh 链接；有多个技能时用 `--skill 名称` 选择。
 - `aak save 技能名`：把实际使用的副本及其中的修改收进库。多个来源时用 `--from codex` 指定，`--dry-run` 可先看变化。
