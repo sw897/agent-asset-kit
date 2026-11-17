@@ -506,22 +506,30 @@ def init_project(args):
     old = target.read_text(encoding='utf-8') if target.exists() else ''
     if any(start in old for start in ('<!-- AGENT_ASSET_KIT_TEMPLATE_START -->', '<!-- AGENT_ASSETS_TEMPLATE_START -->')):
         raise Stop('project already has a template section; review changes directly, no automatic overwrite')
-    stack = []
-    for name, label in [('package.json', 'JavaScript/TypeScript'), ('Cargo.toml', 'Rust'),
-                        ('go.mod', 'Go'), ('pyproject.toml', 'Python')]:
-        if (project / name).is_file():
-            stack.append(label)
-    commands = '\n'.join('- `' + c.replace('`', '') + '`（初始化时登记，执行结果另行核验）' for c in args.command)
-    if not commands:
-        commands = '尚未核实运行/验证命令。先检查现有指南和工程入口；确认真实命令后记录，不编造验证结果。'
     base = (ROOT / 'templates/agents/base.md').read_text(encoding='utf-8')
     module = '' if args.template == 'base' else (ROOT / f'templates/agents/modules/{args.template}.md').read_text(encoding='utf-8')
     template_hash = sha((base + '\n' + module).encode())
-    fields = {'PROJECT': project.name, 'PURPOSE': args.purpose,
-              'STACK': '、'.join(stack) or '以项目实际文件和说明为准', 'COMMANDS': commands}
+    # Common-constraint templates need no project facts. Keep substitutions for
+    # existing custom templates, including fields in an explicitly chosen module.
+    fields = {'PROJECT': project.name, 'PURPOSE': args.purpose}
+    requested = base + '\n' + module
+    if '{{PURPOSE}}' in requested and not args.purpose:
+        raise Stop('this template requires --purpose')
+    if '{{STACK}}' in requested:
+        stack = []
+        for name, label in [('package.json', 'JavaScript/TypeScript'), ('Cargo.toml', 'Rust'),
+                            ('go.mod', 'Go'), ('pyproject.toml', 'Python')]:
+            if (project / name).is_file():
+                stack.append(label)
+        fields['STACK'] = '、'.join(stack) or '以项目实际文件和说明为准'
+    if '{{COMMANDS}}' in requested:
+        fields['COMMANDS'] = '\n'.join('- `' + c.replace('`', '') + '`（初始化时登记，执行结果另行核验）' for c in args.command)
+        if not fields['COMMANDS']:
+            fields['COMMANDS'] = '尚未核实运行/验证命令。先检查现有指南和工程入口；确认真实命令后记录，不编造验证结果。'
     for name, value in fields.items():
         base = base.replace('{{' + name + '}}', value)
-    if '{{' in base:
+        module = module.replace('{{' + name + '}}', value)
+    if '{{' in base or '{{' in module:
         raise Stop('unresolved template variables')
     version = git('rev-parse', '--short', 'HEAD', check=False).stdout.strip() or 'uncommitted'
     section = ('<!-- AGENT_ASSET_KIT_TEMPLATE_START -->\n'
@@ -713,9 +721,9 @@ def main(argv=None, initialize_default=False):
     p.add_argument('--branch-only', action='store_true', help='publish an isolated codex/ branch for CI without merging main')
     p = sub.add_parser('init-project')
     p.add_argument('project')
-    p.add_argument('--purpose', required=True)
-    p.add_argument('--template', choices=['base', 'software', 'research', 'documents'], default='software')
-    p.add_argument('--command', action='append', default=[])
+    p.add_argument('--purpose', default='', help='purpose for a legacy custom template using {{PURPOSE}}')
+    p.add_argument('--template', choices=['base', 'software', 'research', 'documents'], default='base')
+    p.add_argument('--command', action='append', default=[], help='repeatable command for a legacy custom template using {{COMMANDS}}')
     p = sub.add_parser('scheduler')
     p.add_argument('--interval', type=int, default=60)
     p.add_argument('--apply', action='store_true')

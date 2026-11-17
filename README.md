@@ -105,7 +105,7 @@ Agent 通过 `aak guide` 查用法，按需读取 `USER.md`、`MEMORY.md` 和相
 
 **跨设备同步。** 只想在本机 Agent 之间分发技能，前面的 `share` 就够了。要给资产库创建本地 Git 提交，先配置自己的 Git 作者，再进入资产库运行 `aak sync --agent codex --message "Save skills" --local-only`。跨设备可使用自己的 GitHub 私有资产库。首次在另一台机器克隆该资产库后，在克隆目录运行 `aak share 技能名 --to codex`，即可把库里的技能复制到本机。已有远端配置的设备可运行 `aak refresh` 拉取更新，再按需分发。[远端配置与完整工作流](docs/workflows.md#可选-github-私有资产库)
 
-若需收集其他原生修改、比较双方版本、试用已入库的新修订或批量部署，见[审阅与分发工作流](docs/workflows.md)。`aak init-project` 可为其他项目生成约定预览。
+若需收集其他原生修改、比较双方版本、试用已入库的新修订或批量部署，见[审阅与分发工作流](docs/workflows.md)。`aak init-project PROJECT` 默认生成共性行为约束预览；按需用 `--template software|research|documents` 追加模块，审阅后用 `aak apply-project PLAN_ID --reviewed` 应用。项目事实从现有代码和文档查阅，不重复写入模板；旧自定义模板仍可使用 `--purpose`、`--command` 及相应占位符。
 
 ## 资产库
 
