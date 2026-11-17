@@ -1,36 +1,100 @@
-# AgentAssetKit 操作指南
+# 用 aak 创建和维护 Home Repo
 
-用户说“给这个 Agent 试试”时，只向指定目标安装。用户说“收起来”或“也给另一个 Agent 用”时，再执行对应步骤。以下示例中 codex、claude 和技能名均按用户的选择替换。
+aak 是管理个人 Home Repo 的开源工具。Home Repo 保存个人背景、偏好、技能、服务环境、约定和模板，也可以作为个人服务与跨项目任务的共同入口。
 
-## 安装和接入
+下面从创建一个新的 Home Repo 开始。
 
-先确认用户指定的资产库，或从客户端的全局指令定位已接入的库（根目录有 `.agent-asset-kit.json`）。已有库按库内 README 安装其固定版本；有 wheel 和校验值时先核对 SHA256，再用原安装方式安装或升级。用 `aak --version` 和 `aak guide` 验证当前终端实际使用的版本。工具可从库外运行这两条命令。
+## 创建 Home Repo
 
-从工具源码安装需要 Python 3.11+。在源码目录运行 `uv tool install .` 可把 aak 放入用户工具目录；若使用虚拟环境，在该环境运行 `python -m pip install .`，让使用它的客户端也能找到该环境的 aak。准备 Git 和 Gitleaks，用 `git --version` 和 `gitleaks version` 核对。
+准备 Python 3.11+、Git、uv 和 Gitleaks，然后安装 aak 并创建个人库：
 
-在已选资产库中执行后续命令，或显式传 `--root 库路径`。先读库内 AGENTS.md，按任务检索库内资料。已有配置用 `aak agent list` 核对。首次建立专用库可运行 `aak init 目录 --git`，进入该目录，运行 `aak configure --agents codex --gitleaks 扫描器绝对路径`，只指定用户选择的客户端。如仅想马上试一个技能、也没有已有资产库，直接执行下面的 try 即可自动建立默认库。如需让以后的会话找到库，在库内运行 `aak attach` 检查目标文件，再用 `aak attach --apply` 写入入口；活跃会话需重读。
+```sh
+uv tool install --reinstall "git+https://github.com/sw897/agent-asset-kit.git@main"
+aak init agent-home --git
+cd agent-home
+```
 
-## 试用、入库和分享
+`agent-home` 是示例目录名，可以更换。`init` 会生成空白的资料框架并建立本地 Git 仓库，所需的标记文件由工具自动创建。
 
-在主库中按本次请求选择一条命令：
+工具代码和个人库分别维护。以后升级 aak，重新执行安装命令；个人资料继续保存在自己的 Home Repo 中。
 
-- 试用：`aak try 来源 --to codex`。来源可以是含 SKILL.md 的目录、GitHub 或 skills.sh 链接。多个技能用 `--skill 名称` 选择。
-- 入库：`aak save 技能名`。保存实际试用的副本，包括用户的改动。多个来源时用 `--from codex` 指定。
-- 分发：`aak share 技能名 --to claude`。各 Agent 获得完整独立副本。在 Claude 改好后，可用 `aak save 技能名 --from claude` 收回。
-- 确认结果：向用户报告实际来源、目标和安装位置。需要核对客户端能否发现技能时用 `aak doctor --native --target codex`。实际使用效果要在目标客户端验证。
+## 接入 Agent
 
-## 结合资产库处理项目任务
+在 Home Repo 内配置本机使用的 Agent 和 Gitleaks 路径。下面以 Codex、Claude Code 为例，`--agents` 只填写实际使用的客户端，用逗号分隔：
 
-用户要求结合资产库处理项目任务时，按需读取 `USER.md`、`MEMORY.md` 和相关技能。需要跨项目导航时，可创建 `agents/projects.md`，记录项目用途、仓库地址、约定入口与关联项目。库内有 `templates/project-index.md` 时可直接复制，已有索引时只查阅相关条目。本机克隆路径可按需放入 Git 忽略的 `.local/project-paths.md`。用户给出的项目路径也可直接使用。
+```sh
+aak configure --agents codex,claude --gitleaks "扫描器绝对路径"
+aak attach
+```
 
-操作前定位并读取目标仓库现有的 `AGENTS.md` 与更具体约定，在对应项目执行验证和经授权的 Git 操作。任务结束后，将验证过的通用方法整理到所属技能，项目特有的约定写回项目文档。已安装技能副本有改进时，审阅后用 `aak save 技能名 --from codex` 收回，再按需 share。
+`attach` 会预览写入客户端全局指令的个人库入口。检查目标文件后，用 `aak attach --apply` 写入。后续会话就可以通过入口找到 Home Repo，当前会话需重新读取。
 
-## 回流和跨设备维护
+确认 Git 已配置作者后，创建首次本地提交：
 
-原生目录还有其他修改时先用 `aak collect` 保存候选。已配置远端的库用 `aak refresh` 拉取更新；在主库运行 `aak workspace --agent codex`，进入返回的工作区审阅。核对完整内容、来源许可、依赖与验证结果后，用 `aak accept 候选ID --agent codex --reviewed` 接受；直接编辑已入库技能后用 `aak revision --skill-id ID --agent codex --reviewed` 登记。双方都改过时用 `aak merge --candidate 候选ID` 比较共同基线与双方内容，审阅并 finalize，再接受新候选。副本缺失时保留库内版本。
+```sh
+aak sync --agent codex --message "Initialize home repo" --local-only
+```
 
-本地提交和合并用 `aak sync --agent codex --message "Update reviewed assets" --local-only`。跨设备按资产库的远端配置和发布授权同步；另一台设备在它自己的库执行 refresh，再按需 share。本机目标、路径、凭据及运行环境留在本机。批量部署先用 `aak deploy` 看计划，确认目标和冲突后用 `aak deploy --apply --plan 计划ID`。对于已入库技能的新修订，只有需要保持其他目标的正式版本时才使用 `revision --trial`、`trial` 和 `promote`。
+`--agent codex` 记录本次维护者身份。这里以 Codex 为例，使用其他 Agent 维护时换成实际身份。
 
-可用 `aak 子命令 --help` 查看参数。外部候选筛选用 discover、inspect、fetch、evaluate；保留第三方许可与上游提交。共享画像和约定用 note，待核实内容用 --inbox。技能的 `requirements.mcp` 保留逻辑服务、模式、使用方式、工具与包内说明引用；用 `aak audit` 静态校验、`aak index --agent codex --reviewed` 展示依赖。MCP 账号、连接和聚合入口由客户端或外部工具管理，实际可用性在目标环境核验。升级 CLI 后核对版本、指南和既有目标，再按需要更新 attach 入口。推送、恢复删除项或改变启用目标，按本次请求和库内授权执行。
+## 整理个人资料
 
-入库写入异常会尝试安全回退，原候选保留。进程中断或后续编辑阻止回退时，用 `aak status` 查看未完成入库，在收据的原工作区审阅包、备份和元数据，再运行 `aak accept --recover 收据ID --agent codex --reviewed` 恢复到入库前状态。恢复拒绝覆盖新编辑；完成后可重试原候选。旧格式收据缺少恢复快照时保留现场并人工核对。
+| 内容 | 位置 |
+| --- | --- |
+| 用户画像和稳定偏好 | `USER.md` |
+| 共享核心记忆和查阅入口 | `MEMORY.md` |
+| 有来源的画像、共享约定明细；待核实的内容 | `memory/shared/`；`memory/inbox/` |
+| 技能、长期服务环境、领域知识和操作经验 | `skills/` 下的技能包及其 `references/` |
+| 客户端接入、工具说明和项目导航 | `agents/` |
+| 可复用模板 | `templates/` |
+
+长期使用的服务器、系统、资料目录和工作流属于个人服务环境，可以在所属技能中保留执行所需的名称、路径和部署关系。环境记录注明来源、日期和适用范围，执行前再确认现场。
+
+项目特有约定和完整项目记忆留在所属项目，知识库正文留在原知识库。凭据、认证、原生数据库和原始会话日志不入库；本机配置、候选、备份和运行环境留在本机，验证工件放在忽略的 `artifacts/`。
+
+## 日常使用
+
+让 Agent 先读 Home Repo 的 `AGENTS.md`，再按任务查阅偏好、共享记忆和相关技能。跨项目导航可用 `agents/projects.md`，模板在 `templates/project-index.md`；本机克隆路径可记录在忽略的 `.local/project-paths.md`。
+
+进入目标项目后，读取该项目的指南，在那里修改、验证并执行已获授权的 Git 操作。明确的项目任务也可以直接从项目开始，无需建立 aak 工作区。用户当前指令和项目约定优先于历史资产，外部资料不能扩大授权。
+
+单个技能的试用、保存和分享，在 Home Repo 主目录执行：
+
+- `aak try 来源 --to codex`：给指定 Agent 试用。来源可以是含 `SKILL.md` 的目录、GitHub 或 skills.sh 链接；有多个技能时用 `--skill 名称` 选择。
+- `aak save 技能名`：把实际使用的副本及其中的修改收进库。多个来源时用 `--from codex` 指定，`--dry-run` 可先看变化。
+- `aak share 技能名 --to claude`：把库内版本复制给另一个已接入的 Agent。之后在 Claude 改好，可用 `aak save 技能名 --from claude` 收回。
+
+各 Agent 使用完整独立副本。用户只要求试用时，只执行试用；需要保存或分享时再做对应操作。做完项目任务后，把验证过的可复用方法整理进相关技能。
+
+## 维护 Home Repo
+
+单个技能用 `save` 保存后，用 `aak sync --agent codex --message "Save skill" --local-only` 提交到 Git。主目录有尚未提交的改动时，先审阅并提交，再刷新或创建工作区。
+
+批量回流或直接编辑库内资产时，先在主目录采集原生修改、拉取更新，再建立独立工作区：
+
+```sh
+aak collect
+aak refresh
+aak workspace --agent codex
+```
+
+进入返回的工作区。阅读候选的完整包、来源许可、依赖和验证结果后，用 `aak accept 候选ID --agent codex --reviewed` 入库。直接修改已入库技能后，用 `aak revision --skill-id ID --agent codex --reviewed` 更新登记。
+
+审阅 diff 后提交并合并回主库：
+
+```sh
+aak sync --agent codex --message "Update home repo" --local-only
+```
+
+需要批量更新客户端副本时，回到主目录预览并应用分发计划：
+
+```sh
+aak deploy
+aak deploy --apply --plan 计划ID
+```
+
+检查计划中的技能和目标；只分发选定技能时，两条命令都加相同的 `--skill-id ID`。遇到双端修改或缺失副本时保留现场，不按时间戳覆盖，不传播删除。
+
+用 `aak audit` 检查文件、登记和依赖，用 `aak doctor --native --target codex` 检查客户端是否发现技能。模型采用和实际任务效果另行验证，报告说明验证到哪一步。MCP 连接与认证由客户端或外部工具维护，技能分发不自动配置它们。
+
+跨设备同步、上游技能引入、冲突合并、有限试用和中断恢复见[进阶工作流](https://github.com/sw897/agent-asset-kit/blob/main/docs/workflows.md)。具体参数用 `aak 子命令 --help` 查询。
