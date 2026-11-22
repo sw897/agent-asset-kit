@@ -16,7 +16,7 @@ Keep stable user preferences in USER.md, shared core memory and pointers in MEMO
 
 Do not copy native identities, authentication, original memory stores, session logs, credentials or databases. Mark environmental observations with source, date and scope; verify current conditions before acting.
 
-Collect native skill changes before refreshing or deploying. Review complete candidate files, provenance, dependencies and verification evidence. Use isolated workspaces for accepted changes. Preserve both sides of conflicts; missing copies do not authorize deletion or restoration.
+Collect native skill changes before refreshing or deploying. Review complete candidate files, provenance, dependencies and verification evidence. Preserve incomplete or changed candidates for inspection before retrying. Use isolated workspaces for accepted changes. Preserve both sides of conflicts; missing copies do not authorize deletion or restoration.
 
 Run quick try/save/share commands only against the primary library. They write on explicit invocation and do not create a Git commit. Use collect and the candidate review workflow for other native copies. For bulk deployment, return to the clean committed primary main checkout and apply the exact previewed plan.
 

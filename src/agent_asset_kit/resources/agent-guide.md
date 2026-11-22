@@ -86,6 +86,8 @@ aak refresh
 aak workspace --agent codex
 ```
 
+`collect` 会校验同一 ID 的已有候选。遇到残缺或内容有差异的候选时，保留目录并按返回的 ID 核对。
+
 进入返回的工作区，或将其路径传入 `aak --root 工作区路径 子命令`。阅读候选的完整包、来源许可、依赖和验证结果后，用 `aak accept 候选ID --agent codex --reviewed` 入库。直接修改已入库技能后，用 `aak revision --skill-id ID --agent codex --reviewed` 更新登记。`--agent` 记录维护者身份，不选择客户端实例。
 
 审阅 diff 后提交并合并回主库：

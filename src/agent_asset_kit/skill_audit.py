@@ -113,9 +113,9 @@ def packaged_link_target(record, source, destination):
     if resolved != '..' and not resolved.startswith('../'):
         return resolved
 
-    # A link can reenter its own package by name. Check that it does so
-    # in the canonical directory and under every registered native alias.
-    folders = [record['path'], *(binding['path'] for binding in record['bindings'])]
+    # Check self-relative links in the standalone package, canonical directory
+    # and every registered native alias.
+    folders = [record['name'], record['path'], *(binding['path'] for binding in record['bindings'])]
     paths = set()
     for folder in folders:
         folder = posixpath.normpath(folder)

@@ -220,10 +220,10 @@ def inspect(args):
                     selected.append(path)
                     continue
                 entry = (path + '/' if path else '') + 'SKILL.md'
-                body = read_blob(repo, entries[entry], limit=1024 * 1024).decode('utf-8')
                 try:
+                    body = read_blob(repo, entries[entry], limit=1024 * 1024).decode('utf-8')
                     fields = parse_entry_fields(body)
-                except Stop:
+                except (Stop, UnicodeDecodeError):
                     continue
                 if fields['name'] == selector:
                     selected.append(path)

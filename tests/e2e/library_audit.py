@@ -117,6 +117,7 @@ def main():
         canonical.write_bytes(original + b'\n[Required reference](references/missing.md "Reference title")\n'
                               b'[Same package](../library-demo/references/detail.md)\n'
                               b'[Unshipped material](../unshipped/notes.md)\n'
+                              b'[Library layout](../../custom/library-demo/references/detail.md)\n'
                               b'\n`skill_view("library-demo", "invalid:filename.md")`\n')
         cli('revision', '--skill-id', ident, '--agent', 'codex', '--reviewed')
         config.write_text('{not valid local JSON', encoding='utf-8')
@@ -129,13 +130,20 @@ def main():
         check('links resolve only to files packaged at the registered placements',
               any(r['reference'] == '../library-demo/references/detail.md' and r['status'] == 'PASS'
                   for r in result['references']) and 'OUT_OF_PACKAGE_REFERENCE' in codes)
-        record['bindings'][0]['path'] = 'alternate-name'
-        write(manifest_path, manifest)
+        revised = json.loads(manifest_path.read_text(encoding='utf-8'))
+        revised['packages'][ident]['bindings'][0]['path'] = 'alternate-name'
+        write(manifest_path, revised)
         result = cli('audit', '--library-only', expected=2)
         check('a package alias must preserve a self-relative link',
               any(i['reference'] == '../library-demo/references/detail.md' and i['code'] == 'OUT_OF_PACKAGE_REFERENCE'
                   for i in result['issues'] if 'reference' in i))
-        record['bindings'][0]['path'] = 'library-demo'
+        revised['packages'][ident]['bindings'] = []
+        write(manifest_path, revised)
+        result = cli('audit', '--library-only', expected=2)
+        references = {ref['reference']: ref['status'] for ref in result['references']}
+        check('an unbound skill must be portable as a standalone package',
+              references['../../custom/library-demo/references/detail.md'] == 'OUT_OF_PACKAGE'
+              and references['../library-demo/references/detail.md'] == 'PASS')
         detail.unlink()
         canonical.write_bytes(original)
         valid_requirements = record['requirements']

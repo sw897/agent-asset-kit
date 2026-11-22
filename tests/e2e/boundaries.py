@@ -172,13 +172,18 @@ def main():
             write(path, json.dumps(original))
 
         def sensitive_files():
-            for index, name in enumerate(['.env.production', 'native.sqlite3']):
-                lib = library(base, 'sensitive-' + str(index))
-                native = Path(read(lib / '.local/config.json')['agents']['codex']['skills_root']) / 'demo'
-                write(native / 'SKILL.md', '---\nname: demo\ndescription: Synthetic file policy.\n---\n')
-                write(native / name, 'Synthetic private configuration without a recognizable token.\n')
+            lib = library(base, 'sensitive-files')
+            native = Path(read(lib / '.local/config.json')['agents']['codex']['skills_root']) / 'demo'
+            write(native / 'SKILL.md', '---\nname: demo\ndescription: Synthetic file policy.\n---\n')
+            for name in ('.env.production', 'native.sqlite3', '.ENV', 'AUTH.JSON', '.EnV.Device'):
+                write(native / name, 'Ordinary synthetic fixture text.\n')
                 capture = cli(lib, 'collect', expected=2)
                 check(name + ' is rejected before becoming a candidate', capture['blocked'] and not capture['candidates'])
+                (native / name).unlink()
+            write(native / '.ENV.EXAMPLE', 'Synthetic environment template.\n')
+            captured = cli(lib, 'collect')['candidates']
+            check('an uppercase example remains an allowed package asset',
+                  len(captured) == 1 and '.ENV.EXAMPLE' in captured[0]['file_modes'])
 
         def invalid_entry():
             lib = library(base, 'entrypoint')

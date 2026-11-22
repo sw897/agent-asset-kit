@@ -246,9 +246,10 @@ def ignored_package_file(name):
 
 
 def restricted_package_file(name):
-    env_secret = name.startswith('.env.') and name not in {'.env.example', '.env.sample', '.env.template'}
+    normalized = name.lower()
+    env_secret = normalized.startswith('.env.') and normalized not in {'.env.example', '.env.sample', '.env.template'}
     database = re.search(r'\.(?:sqlite\d*|db)(?:-(?:wal|shm|journal))?$', name, re.I)
-    return name in DENIED or env_secret or database or Path(name).suffix.lower() in {'.key', '.pem', '.p12', '.pfx'}
+    return normalized in DENIED or env_secret or database or Path(normalized).suffix in {'.key', '.pem', '.p12', '.pfx'}
 
 
 def files_in(folder, modes=None):
@@ -533,10 +534,10 @@ def collect():
             candidate_id = sha(json.dumps({'source': str(source), 'sha256': fingerprint,
                 'skill_id': ident, 'bindings': bindings, 'base': bases}, sort_keys=True).encode())[:20]
             dest = LOCAL / 'candidates' / candidate_id
-            library_path(dest)
-            if not (dest / 'candidate.json').exists():
+            receipt = existing_candidate(dest, fingerprint)
+            if receipt is None:
                 with tempfile.TemporaryDirectory(prefix='candidate-', dir=LOCAL) as temporary:
-                    stage = Path(temporary)
+                    stage = Path(temporary) / 'candidate'
                     write_tree(stage / 'package', files)
                     scan(stage / 'package')
                     if tree_hash(read_native(config, bindings[0], manifest['packages'].get(ident), state, source)) != fingerprint:
@@ -548,9 +549,8 @@ def collect():
                               'file_modes': file_modes(files),
                               'origin': manifest['packages'][ident]['origin'] if ident else origin_for(source, config)}
                     save(stage / 'candidate.json', record)
-                    dest.parent.mkdir(exist_ok=True)
-                    stage.rename(dest)
-            candidates.append(load(dest / 'candidate.json'))
+                    receipt = publish_candidate(stage, dest, fingerprint)
+            candidates.append(receipt)
         except Stop as error:
             blocked.append({'source': source.name, 'reason': str(error)})
     save(LOCAL / 'baselines.json', state)
@@ -579,29 +579,39 @@ def rename_new(source, dest):
         raise OSError(errno, os.strerror(errno), str(dest))
 
 
+def existing_candidate(destination, digest, *, require_evaluation=False):
+    """Check an existing candidate before reusing its receipt."""
+    library_path(destination)
+    if not destination.exists():
+        return None
+    try:
+        if not destination.is_dir():
+            raise ValueError()
+        contents = library_path(destination / 'package')
+        entry = library_path(contents / 'SKILL.md')
+        previous = load(destination / 'candidate.json')
+        evaluation = library_path(destination / 'evaluation.json')
+        if (not isinstance(previous, dict) or previous.get('id') != destination.name or
+                not previous.get('sha256') or not isinstance(previous.get('file_modes', {}), dict) or
+                not entry.is_file() or (require_evaluation and not evaluation.is_file())):
+            raise ValueError()
+    except (OSError, ValueError):
+        raise Stop(f'incomplete candidate directory {destination.name}. '
+                   'Inspect and preserve it before retrying') from None
+    if (previous['sha256'] != digest or
+            tree_hash(files_in(contents, previous.get('file_modes'))) != digest):
+        raise Stop(f'existing candidate content differs for {destination.name}. Content retained for review')
+    return previous
+
+
 def publish_candidate(stage, destination, digest):
     """Publish the complete tree or reuse an already verified candidate."""
-    library_path(destination)
-    if destination.exists():
-        try:
-            if not destination.is_dir():
-                raise ValueError()
-            contents = library_path(destination / 'package')
-            entry = library_path(contents / 'SKILL.md')
-            previous = load(destination / 'candidate.json')
-            evaluation = library_path(destination / 'evaluation.json')
-            if (not isinstance(previous, dict) or previous.get('id') != destination.name or
-                    not previous.get('sha256') or not isinstance(previous.get('file_modes', {}), dict) or
-                    not entry.is_file() or ((stage / 'evaluation.json').is_file() and not evaluation.is_file())):
-                raise ValueError()
-        except (OSError, ValueError):
-            raise Stop('incomplete candidate directory. Inspect and preserve it before retrying') from None
-        if (previous['sha256'] != digest or
-                tree_hash(files_in(contents, previous.get('file_modes'))) != digest):
-            raise Stop('existing candidate content differs. Content retained for review')
-        return
+    previous = existing_candidate(destination, digest, require_evaluation=(stage / 'evaluation.json').is_file())
+    if previous is not None:
+        return previous
     destination.parent.mkdir(parents=True, exist_ok=True)
     rename_new(stage, destination)
+    return load(destination / 'candidate.json')
 
 
 def restore_deployment_backup(target, change, journal, journal_path):

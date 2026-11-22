@@ -356,7 +356,30 @@ runpy.run_module('agent_asset_kit', run_name='__main__')
                   (candidates / fetched['candidate'] / 'package/SKILL.md').is_file()
                   and fetched['description'] == 'Synthetic transaction fixture.')
 
-            accept(lib, collect(lib))
+            native_id = collect(lib)
+            native_candidate = candidates / native_id
+            metadata_path = native_candidate / 'candidate.json'
+            entry = native_candidate / 'package/SKILL.md'
+            original = entry.read_bytes()
+            check('collect reuses a complete matching candidate',
+                  cli(lib, 'collect')['candidates'] == [read(metadata_path)])
+
+            parked = base / 'parked-native-candidate.json'
+            metadata_path.rename(parked)
+            result = cli(lib, 'collect', expected=2)
+            check('collect reports an incomplete candidate and preserves its files',
+                  not result['candidates'] and 'incomplete candidate directory' in result['blocked'][0]['reason']
+                  and entry.read_bytes() == original and not metadata_path.exists())
+            parked.rename(metadata_path)
+
+            edited_bytes = original + b'\nUnreviewed candidate edit.\n'
+            entry.write_bytes(edited_bytes)
+            result = cli(lib, 'collect', expected=2)
+            check('collect blocks and preserves an edited candidate',
+                  not result['candidates'] and 'existing candidate content differs' in result['blocked'][0]['reason']
+                  and entry.read_bytes() == edited_bytes)
+            entry.write_bytes(original)
+            accept(lib, native_id)
             cli(lib, 'sync', '--agent', 'codex', '--message', 'Synthetic base commit', '--local-only')
             cli(lib, 'collect')  # Capture the matching native baseline before editing.
             edited = collect(lib, BODY + '\nNative fixture edit.\n')

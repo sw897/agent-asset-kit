@@ -20,7 +20,7 @@
 
 单技能日常操作可直接在主库使用 `try`、`save`、`share`。这三条命令不支持独立工作区，且 `save` 只处理留有快捷操作收据的副本。下面的候选流程用于批量回流、已有原生技能和需要单独审阅的变更。
 
-运行 `aak collect` 将新建或修改的完整 Skill 包快照保存到 `.local/candidates/`。它排除内置资源及运行环境，保留可执行文件意图，不复制认证或原生数据库。采集不会改写原生副本。
+运行 `aak collect` 将新建或修改的完整 Skill 包快照保存到 `.local/candidates/`。它排除内置资源及运行环境，保留可执行文件意图，不复制认证或原生数据库。采集不会改写原生副本。已有候选通过完整性校验后可复用，残缺或内容有差异的候选目录会保留供核对。
 
 在主库采集后，处理并提交主库已有改动，再运行 `aak refresh` 和 `aak workspace --agent codex`。无远端时 `refresh` 返回未刷新。进入返回的工作区，或显式传入其 `--root`；本机候选和配置由主库共享，工作区的资产与 Git 暂存区分别隔离。检查完整文件、来源、许可、依赖、适用范围与验证结果，再执行：
 
@@ -106,6 +106,8 @@ aak evaluate CANDIDATE_ID
 aak evaluate CANDIDATE_ID --decision trial --reason "Reviewed complete package" --use-case "Describe the intended task" --agent codex --reviewed
 ```
 
+也可用 `--skill NAME` 按目录名或可读的 frontmatter 名称定位技能。选中的包须通过完整校验。
+
 替换返回的技能目录、确切提交和候选 ID；不要把上游 URL 中的版本 / 路径与显式 `--ref` / `--path` 混用。审阅完整包后，在工作区运行 `accept`，再同步、有限试用和正式采用。`adopt` 也可作为已审采用决策；`reject` / `reference` 不安装。许可未知的外部候选不能直接采用或分发。需要重新考虑已拒绝来源时，显式使用相应命令的 `--reconsider --reviewed`。
 
 `try` 支持本地完整技能目录、`OWNER/REPO`、GitHub 与 skills.sh 链接。本地目录在快捷入口中按自定义来源处理，不自动推断第三方作者；第三方技能优先使用上游地址保留来源、提交和许可。
@@ -157,7 +159,7 @@ macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装�
 
 `dependencies[].skill` 使用登记名称；必需依赖应在相应客户端有目标绑定，条件依赖用 `conditional` 和 `when` 说明。本机检查中，`platforms` 接受 `darwin`、`linux`、`win32`，`requires_agent` 接受已知客户端类型；不适用的模式返回 `NOT_APPLICABLE`。`files` 可用 `paths_by_platform` 指定各平台的路径或路径列表，`env` 提供现场覆盖。`python` 用 `interpreter_by_platform` 指定各平台的解释器。平台映射未命中时取通用 `path` 或 `interpreter`，省略通用值时该平台返回 `NOT_APPLICABLE`。Python 解释器路径相对原生技能目录，运行环境留在本机，不随完整技能资产复制。
 
-这些声明不会安装依赖、运行技能正文或认证服务。普通审计检查命令位置、文件存在性和 Python 安装元数据；必需项缺失会阻塞，可选项缺失产生警告。`audit --library-only` 检查技能依赖关系、运行依赖字段和 MCP 声明。本机可用性由普通审计检查。Markdown 相对链接须指向技能包随附的文件或目录，登记的原生别名也应保留链接可达性。
+这些声明不会安装依赖、运行技能正文或认证服务。普通审计检查命令位置、文件存在性和 Python 安装元数据；必需项缺失会阻塞，可选项缺失产生警告。`audit --library-only` 检查技能依赖关系、运行依赖字段和 MCP 声明。本机可用性由普通审计检查。Markdown 相对链接须在独立技能目录内可用，即使技能尚无客户端绑定。登记的原生别名也应保留链接可达性。
 
 `requirements.mcp` 沿用以下格式。先在技能包内准备说明文件，再把声明加入该技能的 manifest 记录：
 

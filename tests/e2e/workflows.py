@@ -120,19 +120,28 @@ def main():
         body = ('---\nname: workflow-demo\ndescription: Synthetic\n  workflow skill.\n---\n\n'
                 'Local detail base\n\nRemote detail base\n')
         write(upstream / 'skills/demo/SKILL.md', body)
+        undecodable = upstream / 'skills/undecodable/SKILL.md'
+        undecodable.parent.mkdir(parents=True)
+        undecodable.write_bytes(b'\xff\xfeSynthetic fixture.\n')
+        write(upstream / 'skills/oversized/SKILL.md', 'X' * (1024 * 1024 + 1))
         write(upstream / 'skills/demo/scripts/helper.py', 'print("fixture business result: 42")\n')
         write(upstream / 'LICENSE', 'MIT License\nCopyright Synthetic Fixture\n')
         execute(['git', 'add', '.'], upstream)
         execute(['git', 'update-index', '--chmod=+x', 'skills/demo/scripts/helper.py'], upstream)
         execute(['git', 'commit', '-m', 'Synthetic upstream v1'], upstream)
         source_ref = execute(['git', 'rev-parse', 'HEAD'], upstream).strip()
-        fetched = cli('fetch', upstream, '--local-source', '--path', 'skills/demo', '--ref', source_ref)
+        fetched = cli('fetch', upstream, '--local-source', '--skill', 'workflow-demo', '--ref', source_ref)
         candidate = fetched['candidate']
         check('fetch pins commit, includes license and performs no native install',
               fetched['origin']['commit'] == source_ref and fetched['license_file'] == 'LICENSE' and
               all(not native(a, kind).exists() for kind in ('codex', 'claude', 'hermes')))
         check('upstream discovery reads a continued description from frontmatter',
               fetched['description'] == 'Synthetic workflow skill.')
+        check('name selection finds the requested package despite unrelated unreadable entries',
+              fetched['origin']['path'] == 'skills/demo' and fetched['name'] == 'workflow-demo')
+        invalid = cli('inspect', upstream, '--local-source', '--path', 'skills/undecodable',
+                      '--ref', source_ref, expected=2)
+        check('an explicitly selected non-UTF-8 skill still fails validation', invalid['status'] == 'STOPPED')
         receipt_path = a / '.local/candidates' / candidate / 'candidate.json'
         parked = work / 'interrupted-fetch-receipt.json'
         receipt_path.rename(parked)

@@ -84,7 +84,7 @@ aak sync --agent codex --message "Initialize home repo" --local-only
 - `aak save 技能名`：把实际使用的副本和修改收进库。多个来源时用 `--from codex` 指定，`--dry-run` 可先看变化。
 - `aak share 技能名 --to claude`：把保存的版本复制给另一个已接入的 Agent。之后的改进也可以通过 `save` 收回。
 
-各 Agent 使用完整独立副本。只要求试用时，只执行试用；需要保存或分享时再做对应操作。遇到双端修改或缺失副本时保留现场，不自动覆盖或传播删除。
+各 Agent 使用完整独立副本。只要求试用时，只执行试用；需要保存或分享时再做对应操作。遇到双端修改或缺失副本时保留现场，不自动覆盖或传播删除。回流采集会核对已有候选的完整性，保留异常候选供审阅。
 
 `try` 和 `share` 会直接写入选定客户端，`save` 会更新库内文件和登记，三者都不自动提交 Git。分享前用 `aak agent list` 核对目标是否启用；多个实例与自定义路径见[客户端适配](docs/adapters.md)。
 
