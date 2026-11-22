@@ -111,12 +111,42 @@ def main():
         write(manifest_path, manifest)
 
         config.write_bytes(original_config)
-        canonical.write_bytes(original + b'\n[Required reference](references/missing.md)\n')
+        detail = canonical.parent / 'references/detail.md'
+        detail.parent.mkdir(exist_ok=True)
+        detail.write_text('[Back to skill](../SKILL.md "Skill entry")\n', encoding='utf-8')
+        canonical.write_bytes(original + b'\n[Required reference](references/missing.md "Reference title")\n'
+                              b'[Same package](../library-demo/references/detail.md)\n'
+                              b'[Unshipped material](../unshipped/notes.md)\n'
+                              b'\n`skill_view("library-demo", "invalid:filename.md")`\n')
         cli('revision', '--skill-id', ident, '--agent', 'codex', '--reviewed')
         config.write_text('{not valid local JSON', encoding='utf-8')
         result = cli('audit', '--library-only', expected=2)
-        check('reviewed package with a missing reference fails', any(i['code'] == 'MISSING_FILE_REFERENCE' for i in result['issues']))
+        codes = {i['code'] for i in result['issues']}
+        check('titled links and invalid skill references are reported together',
+              {'MISSING_FILE_REFERENCE', 'INVALID_SKILL_REFERENCE'} <= codes)
+        check('a parent-relative link within the package still resolves',
+              any(r['reference'] == '../SKILL.md' and r['status'] == 'PASS' for r in result['references']))
+        check('links resolve only to files packaged at the registered placements',
+              any(r['reference'] == '../library-demo/references/detail.md' and r['status'] == 'PASS'
+                  for r in result['references']) and 'OUT_OF_PACKAGE_REFERENCE' in codes)
+        record['bindings'][0]['path'] = 'alternate-name'
+        write(manifest_path, manifest)
+        result = cli('audit', '--library-only', expected=2)
+        check('a package alias must preserve a self-relative link',
+              any(i['reference'] == '../library-demo/references/detail.md' and i['code'] == 'OUT_OF_PACKAGE_REFERENCE'
+                  for i in result['issues'] if 'reference' in i))
+        record['bindings'][0]['path'] = 'library-demo'
+        detail.unlink()
         canonical.write_bytes(original)
+        valid_requirements = record['requirements']
+        record['requirements'] = {'commands': 'example', 'files': [{'paths_by_platform': {'win32': []}}],
+                                  'python': [{'interpreter': '.venv/bin/python', 'distributions': 'example'}]}
+        write(manifest_path, manifest)
+        result = cli('audit', '--library-only', expected=2)
+        check('malformed runtime declarations are all reported without a native probe',
+              {i['requirement'] for i in result['issues'] if i['code'] == 'INVALID_RUNTIME_REQUIREMENT'}
+              == {'commands', 'files', 'python'})
+        record['requirements'] = valid_requirements
         write(manifest_path, manifest)
         releases['skills'][ident]['stable']['commit'] = 'missing-fixture-revision'
         write(repo / 'skills/releases.json', releases)

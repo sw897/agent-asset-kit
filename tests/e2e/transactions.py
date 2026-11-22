@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""CLI failure scenarios for acceptance and sync, using synthetic data only.
+"""CLI failure scenarios for acceptance, deployment, candidates and sync.
 
 Failure modes: metadata writes fail after a package switch; a process exits after
 partial metadata publication; recovery encounters subsequent edits or exits;
-invalid branch-only requests must preserve both the index and Git history.
+a stopped candidate write exposes a partial package; scan failure changes file
+modes or hides staged edits; branch-only preflight alters index or history.
 Python audit hooks inject filesystem errors/exits at the CLI process boundary.
 """
 
@@ -45,8 +46,20 @@ def fault(event, arguments):
         return
     target = Path(os.fsdecode(arguments[1])).resolve()
     mode = os.environ['AAK_E2E_FAULT_MODE']
-    completing = mode == 'complete-error' and target.parent == destination and json.loads(Path(arguments[0]).read_text(encoding='utf-8')).get('state') == 'COMPLETE'
-    if target == destination or completing:
+    phase = {}
+    if mode in ('complete-error', 'verified-exit', 'missing-stage') and target.parent == destination:
+        phase = json.loads(Path(arguments[0]).read_text(encoding='utf-8'))
+    completing = mode == 'complete-error' and phase.get('state') == 'COMPLETE'
+    change = (phase.get('changes') or [{}])[-1]
+    if mode == 'missing-stage' and change.get('state') == 'BACKED_UP':
+        stage = Path(change['staging'])
+        (stage / 'SKILL.md').unlink()
+        stage.rmdir()
+        fired = True
+        return
+    candidate_write = mode == 'candidate-exit' and target.name == 'candidate.json' and destination in target.parents
+    if (target == destination or completing or candidate_write or
+            (mode == 'verified-exit' and change.get('state') == 'VERIFIED')):
         fired = True
         if mode in ('error', 'complete-error'):
             raise OSError(errno.ENOSPC, 'synthetic metadata write failure')
@@ -265,6 +278,122 @@ runpy.run_module('agent_asset_kit', run_name='__main__')
                   metadata(workspace) == before and metadata(lib) == primary_before and
                   not (workspace / 'skills/custom/demo').exists() and not cli(lib, 'status')['pending_acceptances'])
 
+        def deployment_recovery():
+            lib = library('deployment')
+            target = native(lib).parent
+            canonical = lib / 'skills/custom/demo/SKILL.md'
+            write(canonical, BODY)
+            ident = cli(lib, 'register', '--path', 'skills/custom/demo', '--targets', 'codex',
+                        '--agent', 'codex', '--reviewed')['skill_id']
+            cli(lib, 'sync', '--agent', 'codex', '--message', 'Synthetic deployment', '--local-only')
+            baselines = lib / '.local/baselines.json'
+            deployments = lib / '.local/deployments'
+
+            def interrupt(mode, destination):
+                prior = set(deployments.glob('*.json'))
+                plan = cli(lib, 'deploy')['plan_id']
+                cli(lib, 'deploy', '--apply', '--plan', plan,
+                    expected=2 if mode == 'missing-stage' else 73, fault=(mode, destination))
+                created, = set(deployments.glob('*.json')) - prior
+                return created
+
+            receipt = interrupt('exit', baselines)
+            installed = base / 'preserved-create'
+            target.rename(installed)
+            result = cli(lib, 'recheck', receipt.stem, '--reviewed')
+            check('an interrupted create can be reconciled to absence without replay',
+                  result['checks'][0]['recognized'] and not target.exists() and installed.is_dir()
+                  and cli(lib, 'deploy')['actions'][0]['action'] == 'create')
+            receipt = interrupt('exit', baselines)
+            accepted = read(receipt)['changes'][0]['after_sha256']
+            write(native(lib), BODY + '\nA subsequent synthetic edit.\n')
+            result = cli(lib, 'recheck', receipt.stem, '--reviewed', expected=2)
+            check('an unrecognized deployment copy keeps its journal and baseline pending',
+                  not result['checks'][0]['recognized'] and read(receipt)['state'] == 'SWITCHING'
+                  and not baselines.exists())
+            write(native(lib), BODY)
+            cli(lib, 'recheck', receipt.stem, '--reviewed')
+            known = read(baselines)['codex:demo']
+            check('recheck records the committed baseline for an already installed copy',
+                  known['sha256'] == accepted and known['commit'] and not cli(lib, 'deploy')['actions'])
+
+            write(canonical, BODY + '\nSynthetic updated behavior.\n')
+            cli(lib, 'revision', '--skill-id', ident, '--agent', 'codex', '--reviewed')
+            cli(lib, 'sync', '--agent', 'codex', '--message', 'Synthetic update', '--local-only')
+            receipt = interrupt('missing-stage', deployments)
+            restored = read(receipt)
+            check('automatic backup restoration clears the interrupted state',
+                  restored['state'] == 'ABORTED' and restored['changes'][0]['state'] == 'RESTORED'
+                  and restored['changes'][0]['backup'] is None
+                  and native(lib).read_text(encoding='utf-8') == BODY
+                  and len(cli(lib, 'deploy')['actions']) == 1)
+
+            receipt = interrupt('verified-exit', deployments)
+            change = read(receipt)['changes'][0]
+            target.rename(base / 'preserved-update')
+            Path(change['backup']).rename(target)
+            cli(lib, 'recheck', receipt.stem, '--reviewed')
+            check('manual restoration also restores the earlier recorded baseline',
+                  read(baselines)['codex:demo'] == known and len(cli(lib, 'deploy')['actions']) == 1)
+
+        def candidate_publication():
+            lib = library('candidate-publication')
+            upstream = base / 'candidate-upstream'
+            write(upstream / 'SKILL.md',
+                  BODY.replace('description: Synthetic transaction fixture.',
+                               'description: >+\n  Synthetic transaction\n  fixture.'))
+            run(['git', 'init', '-b', 'main'], upstream)
+            run(['git', 'add', 'SKILL.md'], upstream)
+            run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-m', 'Synthetic upstream'], upstream)
+            candidates = lib / '.local/candidates'
+            fault = ('candidate-exit', lib / '.local')
+            cli(lib, 'fetch', upstream, '--local-source', '--skill', 'demo', expected=73, fault=fault)
+            check('interrupted upstream preparation does not publish a partial candidate',
+                  not list(candidates.glob('*')))
+            fetched = cli(lib, 'fetch', upstream, '--local-source', '--skill', 'demo')
+            check('fetch after interruption publishes the complete candidate and folded description',
+                  (candidates / fetched['candidate'] / 'package/SKILL.md').is_file()
+                  and fetched['description'] == 'Synthetic transaction fixture.')
+
+            accept(lib, collect(lib))
+            cli(lib, 'sync', '--agent', 'codex', '--message', 'Synthetic base commit', '--local-only')
+            cli(lib, 'collect')  # Capture the matching native baseline before editing.
+            edited = collect(lib, BODY + '\nNative fixture edit.\n')
+            merge = cli(lib, 'merge', '--candidate', edited)['merge_id']
+            prior = set(candidates.iterdir())
+            finalize = ('merge', '--finalize', merge, '--reviewed')
+            cli(lib, *finalize, expected=73, fault=fault)
+            check('interrupted reconciliation retains the proposal and publishes no partial candidate',
+                  set(candidates.iterdir()) == prior and
+                  read(lib / '.local/merges' / merge / 'merge.json')['state'] == 'proposed')
+            reviewed = cli(lib, *finalize)['candidate']
+            check('merge finalization succeeds on retry',
+                  read(candidates / reviewed / 'candidate.json')['merge_id'] == merge and
+                  (candidates / reviewed / 'package/SKILL.md').is_file())
+
+        def scanner_preflight():
+            lib = library('scanner-preflight')
+            ident = accept(lib, collect(lib))['skill_id']
+            cli(lib, 'sync', '--agent', 'codex', '--message', 'Synthetic base commit', '--local-only')
+            config_path = lib / '.local/config.json'
+            config = read(config_path)
+            config['gitleaks'] = str(base / 'unavailable-scanner')
+            write(config_path, json.dumps(config))
+            canonical = lib / 'skills/custom/demo/SKILL.md'
+            mode, before = canonical.stat().st_mode, metadata(lib)
+            rejected = cli(lib, 'revision', '--skill-id', ident, '--agent', 'codex', '--reviewed',
+                           '--executable', 'SKILL.md', expected=2)
+            check('scanner failure preserves both executable mode and asset metadata',
+                  'configured Gitleaks executable is missing' in rejected['reason'] and
+                  canonical.stat().st_mode == mode and metadata(lib) == before)
+            write(lib / 'README.md', '# Synthetic pending publication\n')
+            rejected = cli(lib, 'sync', '--agent', 'codex', '--message', 'Scanner unavailable',
+                           '--local-only', expected=2)
+            check('rejected staged scan preserves the index and reports how to inspect it',
+                  'staged changes retained' in rejected['reason'] and 'git diff --cached' in rejected['reason']
+                  and run(['git', 'diff', '--cached', '--name-only'], lib).strip() == 'README.md')
+
         def branch_only_preflight():
             lib = library('branch-only')
             config = read(lib / '.local/config.json')
@@ -299,7 +428,8 @@ runpy.run_module('agent_asset_kit', run_name='__main__')
                   run(['git', 'write-tree'], workspace) == index and (workspace / 'README.md').read_text(encoding='utf-8') == '# Synthetic unpublished edit\n')
 
         for scenario in (failed_new_acceptance, failed_existing_acceptance, bounded_preparation,
-                         reconciled_acceptance, interrupted_acceptance, worktree_recovery, branch_only_preflight):
+                         reconciled_acceptance, interrupted_acceptance, worktree_recovery, deployment_recovery,
+                         candidate_publication, scanner_preflight, branch_only_preflight):
             try:
                 scenario()
             except Exception as error:

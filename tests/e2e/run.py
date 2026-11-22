@@ -295,7 +295,10 @@ def main():
         rejected = cli('collect', expected=2)
         check('secret-bearing new skill never enters canonical assets', bool(rejected['blocked']) and
               not any(p['name'] == 'unsafe' for p in read(repo / 'skills/manifest.json')['packages'].values()))
-        check('scanner diagnostics contain no credential text', secret not in (repo / '.local/last-scan.json').read_text())
+        findings = read(repo / '.local/last-scan.json')
+        check('scanner diagnostics persist only location and detector ID',
+              findings and all(set(row) == {'file', 'line', 'rule'} for row in findings)
+              and secret not in json.dumps(findings) and not (repo / '.local/scanner.toml').exists())
         body.write_text('access_token = "' + secret + '"\n')
         cli('note', '--agent', 'codex', '--scope', 'global', '--title', 'rejected', '--source', 'synthetic',
             '--file', str(body), cwd=two, expected=2)

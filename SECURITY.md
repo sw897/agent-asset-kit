@@ -16,6 +16,8 @@ Local `audit` and `doctor` can invoke a declared package Python interpreter to r
 
 For public issues, provide a minimal reproduction with synthetic data. Keep credentials, private skill libraries and personal logs out of public reports.
 
+Allowed file links within a skill package are copied as regular files after validating the resolved target against containment, runtime exclusions and credential filename rules. Gitleaks raw findings are processed in memory. Saved scan diagnostics contain the file path, line and rule identifier.
+
 An explicit root needs a valid library marker, and a worktree must belong to an initialized primary library. Canonical content, shared memory and local metadata cannot traverse library links. Deployment scans the exact prepared version before switching native targets, including a historical stable revision. Interrupted preparation and rollback retain ownership until explicit recovery.
 
 Client installation paths and aliases are local state. Reviewed domain context and explicitly accepted local-source provenance can contain paths in a user's private library; content review determines whether sharing is appropriate. No automatic personal-information anonymization is provided.

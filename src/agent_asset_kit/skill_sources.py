@@ -13,8 +13,9 @@ import uuid
 
 from . import __version__
 from .assetlib import (ROOT, LOCAL, Stop, TRANSIENT, file_modes, files_in, git, load, portable_paths,
-                      registry, relative, save, scan, sha, tree_hash, write_tree, owned_path, library_path)
-from .skill_audit import entry_fields
+                      registry, relative, save, scan, sha, tree_hash, write_tree, owned_path, lookup_package,
+                      publish_candidate)
+from .skill_audit import entry_fields, parse_entry_fields
 
 
 def source_key(origin):
@@ -59,7 +60,7 @@ def decision(args):
         raise Stop('record a current authorized decision with --reviewed and --reason')
     manifest, _ = registry()
     if args.skill_id:
-        record = manifest['packages'][args.skill_id]
+        record = lookup_package(manifest, args.skill_id)
         origin, name = known_source(record), record['name']
         if not origin.get('url'):
             origin['asset_id'] = args.skill_id
@@ -215,10 +216,16 @@ def inspect(args):
         elif selector:
             selected = []
             for path in available:
+                if Path(path).name == selector:
+                    selected.append(path)
+                    continue
                 entry = (path + '/' if path else '') + 'SKILL.md'
                 body = read_blob(repo, entries[entry], limit=1024 * 1024).decode('utf-8')
-                match = re.search(r'^name:\s*[\'"]?([^\r\n\'"]+)', body, re.M)
-                if Path(path).name == selector or (match and match[1].strip() == selector):
+                try:
+                    fields = parse_entry_fields(body)
+                except Stop:
+                    continue
+                if fields['name'] == selector:
                     selected.append(path)
         else:
             selected = available
@@ -255,7 +262,9 @@ def inspect(args):
                         files[license_name] = (read_blob(repo, entries[path], limit=1024 * 1024), 0o644)
                         origin['local_changes'] = 'Included upstream license from ' + path
                     break
-        stage = Path(temporary) / 'package';write_tree(stage, files)
+        draft = Path(temporary) / 'candidate'
+        stage = draft / 'package'
+        write_tree(stage, files)
         fields = entry_fields(stage / 'SKILL.md')
         # Apply the same bounded filename/credential policy as native collection.
         if tree_hash(files_in(stage, file_modes(files))) != tree_hash(files):
@@ -277,21 +286,14 @@ def inspect(args):
             return result
         ident = sha((source_key(origin) + commit + tree_hash(files)).encode())[:20]
         destination = LOCAL / 'candidates' / ident
-        library_path(destination)
-        if destination.exists():
-            previous = load(destination / 'candidate.json')
-            if previous['sha256'] != result['sha256']:
-                raise Stop('existing candidate identity differs; content retained')
-            return dict(result, candidate=ident, package=str(destination / 'package'))
-        destination.mkdir(parents=True)
-        write_tree(destination / 'package', files)
         value = dict(result, id=ident, source=origin['url'], skill_id=duplicate[0] if len(duplicate) == 1 else None,
                      bindings=[], base={}, candidate_type='external', discovered_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
         if value['skill_id']:
             value['base'] = {'repository': manifest['packages'][value['skill_id']]['sha256']}
             value['base_origin'] = known_source(manifest['packages'][value['skill_id']])
             value['requires_merge'] = value['sha256'] != manifest['packages'][value['skill_id']]['sha256']
-        save(destination / 'candidate.json', value)
+        save(draft / 'candidate.json', value)
+        publish_candidate(draft, destination, value['sha256'])
         return dict(result, candidate=ident, package=str(destination / 'package'))
 
 

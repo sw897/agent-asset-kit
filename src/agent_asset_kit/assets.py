@@ -20,7 +20,7 @@ from .assetlib import (ROOT, PRIMARY, LOCAL, Stop, atomic, cfg, collect, deploy,
                       git, key, load, locked, native_path, package, registry, relative,
                       rename_new, run, save, scan, sha, slug, tree_hash, write_tree,
                       file_modes, git_modes, read_native, portable_paths, validate_binding, cli_argv, cli_display,
-                      owned_path, canonical_path, library_path)
+                      owned_path, canonical_path, library_path, baseline, link_like, lookup_package)
 from . import skill_audit
 from . import agent_adapters
 from . import skill_sources
@@ -30,6 +30,7 @@ from . import skill_versions
 from . import skill_acceptance
 
 PUBLISH_FILES = {'AGENTS.md', 'README.md', 'USER.md', 'MEMORY.md', '.gitignore', '.gitattributes', '.agent-asset-kit.json', 'LICENSE'}
+# Older home libraries may still track their own scripts and tests.
 PUBLISH_DIRS = {'agents', 'memory', 'skills', 'templates', 'scripts', 'tests', 'licenses', '.github'}
 
 
@@ -182,34 +183,38 @@ def register(args):
 def revision(args):
     reviewed(args)
     manifest, _ = registry()
-    old = manifest['packages'][args.skill_id]
+    old = lookup_package(manifest, args.skill_id)
     path = canonical_path(ROOT, old)
-    skill_audit.entry_fields(path / 'SKILL.md')
-    files = files_in(path, old.get('file_modes') or git_modes(ROOT, old['path']))
-    for name in getattr(args, 'executable', []) or []:
-        relative(name)
-        if name not in files:
-            raise Stop('executable intent names an absent file')
-        files[name] = (files[name][0], 0o755)
-        (path / name).chmod(0o755)
-    for name in getattr(args, 'not_executable', []) or []:
-        relative(name)
-        if name not in files:
-            raise Stop('non-executable intent names an absent file')
-        files[name] = (files[name][0], 0o644)
-        (path / name).chmod(0o644)
-    scan(path)
-    if 'SKILL.md' not in files:
+    modes = old.get('file_modes') or git_modes(ROOT, old['path'])
+    original = files_in(path, modes)
+    if 'SKILL.md' not in original:
         raise Stop('SKILL.md is required')
+    skill_audit.entry_fields(path / 'SKILL.md')
+    files = dict(original)
+    for names, mode in ((args.executable, 0o755), (args.not_executable, 0o644)):
+        for name in names or []:
+            relative(name)
+            if name not in files:
+                raise Stop('executable intent names an absent file')
+            if link_like(path / name):
+                raise Stop('executable intent requires a regular file')
+            files[name] = (files[name][0], mode)
+    scan(path)
+    if files_in(path, modes) != original:
+        raise Stop('package changed during revision scan; inspect and retry')
     updated = dict(old)
     updated.update(record(old['name'], old['origin']['kind'], files,
                           old['bindings'], args.agent, old['origin']))
     manifest['packages'][args.skill_id] = updated
-    skill_versions.release_change(manifest, args.skill_id, old,
-        getattr(args, 'trial', False) or old.get('lifecycle') == 'reviewed')
+    releases = skill_versions.release_change(manifest, args.skill_id, old,
+        getattr(args, 'trial', False) or old.get('lifecycle') == 'reviewed', persist=False)
     manifest['version'] = 2
-    if old.get('license_file'):
-        manifest['packages'][args.skill_id]['license_file'] = old['license_file']
+    for name, (_, mode) in files.items():
+        if mode != original[name][1]:
+            (path / name).chmod(mode)
+    releases_path = ROOT / 'skills/releases.json'
+    if releases['skills'] or releases_path.exists():
+        save(releases_path, releases)
     save(ROOT / 'skills/manifest.json', manifest)
     return {'revised': args.skill_id, 'sha256': tree_hash(files)}
 
@@ -217,7 +222,7 @@ def revision(args):
 def enable(args):
     reviewed(args)
     manifest, owners = registry()
-    item = manifest['packages'][args.skill_id]
+    item = lookup_package(manifest, args.skill_id)
     binding = {'agent': args.target, 'path': args.path or item['name']}
     validate_binding(cfg(), binding)
     owner = owners.get(key(binding))
@@ -333,8 +338,12 @@ def sync(args):
     if not args.local_only:
         private_remote()
     manifest, _ = registry()
+    # Keep only the staged path and mode lists after verifying package contents.
+    modes = {mode: [] for mode in (0o644, 0o755)}
     for item in manifest['packages'].values():
-        package(ROOT, item)
+        path, files = package(ROOT, item)
+        for name, (_, mode) in files.items():
+            modes[mode].append((path / name).relative_to(ROOT).as_posix())
     publish_names = list(filter(None, git('ls-files', '--cached', '--others', '--exclude-standard', '-z').stdout.split('\0')))
     portable_paths(publish_names)
     for name in publish_names:
@@ -344,26 +353,22 @@ def sync(args):
         owned_path(name)
     git('add', '--all', '--', '.')
     # Upstream .gitignore rules must not silently drop a package's required assets.
-    required = []
-    for item in manifest['packages'].values():
-        path, files = package(ROOT, item)
-        required.extend((path / name).relative_to(ROOT).as_posix() for name in files)
+    required = modes[0o644] + modes[0o755]
     for offset in range(0, len(required), 100):
         git('add', '--force', '--', *required[offset:offset + 100])
     # Git for Windows does not infer executable mode from chmod. Publish reviewed
     # logical modes so immutable revisions have the same identity on both systems.
-    modes = {mode: [] for mode in (0o644, 0o755)}
-    for item in manifest['packages'].values():
-        path, files = package(ROOT, item)
-        for name, (_, mode) in files.items():
-            modes[mode].append((path / name).relative_to(ROOT).as_posix())
     for mode, names in modes.items():
         for offset in range(0, len(names), 100):
             git('update-index', '--chmod=' + ('+x' if mode == 0o755 else '-x'), '--', *names[offset:offset + 100])
     if git('diff', '--cached', '--quiet', check=False).returncode:
         with tempfile.TemporaryDirectory(prefix='index-', dir=LOCAL) as tmp:
             git('checkout-index', '--all', '--prefix', str(Path(tmp)) + os.sep)
-            scan(tmp)
+            try:
+                scan(tmp)
+            except (Stop, OSError, ValueError) as error:
+                raise Stop(f'{error}; staged changes retained. Inspect with git diff --cached '
+                           'and unstage reviewed changes before retrying') from None
             for item in registry(Path(tmp))[0]['packages'].values():
                 package(Path(tmp), item)
         for item in registry()[0]['packages'].values():
@@ -434,7 +439,11 @@ def attach(args):
             if (new.count(begin) != new.count(end) or new.count(begin) > 1 or
                     (begin in new and new.index(begin) > new.index(end))):
                 raise Stop('instruction marker conflict: ' + marker)
-            body = re.sub(r'\{\{(\w+)\}\}', lambda match: values[match[1]], template)
+            try:
+                body = re.sub(r'\{\{(\w+)\}\}', lambda match: values[match[1]], template)
+            except KeyError as error:
+                raise Stop(f'unknown instruction template variable: {error.args[0]}; supported: '
+                           + ', '.join(sorted(values))) from None
             if re.search(r'<!-- [A-Z0-9_]+_(START|END) -->', body):
                 raise Stop('instruction templates cannot contain managed block markers')
             newline = '\r\n' if '\r\n' in old else '\n'
@@ -446,7 +455,8 @@ def attach(args):
                     raise Stop('nested instruction markers: ' + marker)
                 new = left + text + right
             else:
-                new = new + (newline if new.endswith(newline) else newline * 2) + text + newline
+                separator = newline if new.endswith(newline) else newline * 2
+                new = (new + separator if new.strip() else '') + text + newline
         if old != new:
             duplicate = next((c for c in changes if Path(c['path']).resolve() == path.resolve()), None)
             if duplicate:
@@ -564,10 +574,15 @@ def tick():
 
 
 def scheduler(args):
+    if args.interval <= 0:
+        raise Stop('scheduler interval must be a positive number of seconds')
     if sys.platform != 'darwin':
         raise Stop('only the macOS scheduler is implemented; other platforms are UNVERIFIED')
     label = 'io.agentassetkit.collect.' + sha(str(PRIMARY).encode())[:12]
-    destination = Path.home() / 'Library/LaunchAgents' / (label + '.plist')
+    library = Path.home() / 'Library'
+    destination = library / 'LaunchAgents' / (label + '.plist')
+    if any(link_like(path) for path in (library, destination.parent, destination)):
+        raise Stop('scheduler destination traverses a link; inspect LaunchAgents before proceeding')
     executable = shutil.which('aak')
     if not executable:
         raise Stop('install aak on PATH before configuring the collector')
@@ -591,18 +606,76 @@ def recheck(args):
     journal = load(path)
     if not journal:
         raise Stop('deployment journal does not exist')
-    checks = []
+    result = {'rechecked': args.deployment, 'checks': [], 'replayed': False}
+    if journal['state'] == 'RECHECKED':
+        return dict(result, checks=journal.get('checks', []))
+    if journal['state'] not in ('PREPARING', 'SWITCHING', 'INTERRUPTED'):
+        raise Stop('deployment is already closed; no recovery is needed')
     for change in journal['changes']:
         target = Path(change['target'])
-        current = tree_hash(files_in(target.resolve(), change.get('file_modes'))) if target.exists() else None
-        before = tree_hash(files_in(target.resolve(), change.get('before_file_modes'))) if target.exists() else None
-        recognized = current == change['after_sha256'] or (before is not None and before == change['before_sha256'])
-        checks.append({'target': str(target), 'recognized': recognized, 'sha256': current})
-    if not all(c['recognized'] for c in checks):
-        return {'status': 'BLOCKED', 'checks': checks, 'reason': 'restore/reconcile preserved originals before rechecking'}
-    journal['state'] = 'RECHECKED'
+        phase, digest = None, None
+        check = {'target': str(target)}
+        try:
+            for binding in change.get('bindings', []):
+                if native_path(cfg(), binding)[1] != target:
+                    raise Stop('native binding no longer points to this deployment target')
+            linked = link_like(target)
+            if linked and str(target.resolve()) != change.get('before_link_target'):
+                raise Stop('native target is a link with no verified original destination')
+            if not target.exists() and not linked and change['before_sha256'] is None:
+                phase = 'before'
+            elif target.is_dir():
+                modes = change.get('file_modes', {})
+                digest = tree_hash(files_in(target.resolve(), modes))
+                if not linked and digest == change['after_sha256']:
+                    phase = 'after'
+                else:
+                    before_modes = change.get('before_file_modes', {})
+                    before = digest
+                    if os.name == 'nt' and before_modes != modes:
+                        before = tree_hash(files_in(target.resolve(), before_modes))
+                    if before == change['before_sha256']:
+                        digest, phase = before, 'before'
+        except (Stop, OSError, ValueError, RuntimeError) as error:
+            check['reason'] = str(error)
+        result['checks'].append(dict(check, recognized=phase is not None, sha256=digest, phase=phase))
+    if not all(check['recognized'] for check in result['checks']):
+        return {'status': 'BLOCKED', 'checks': result['checks'],
+                'reason': 'restore/reconcile preserved originals before rechecking'}
+
+    state = load(LOCAL / 'baselines.json', {})
+    approvals = load(LOCAL / 'accepted-copies.json', {})
+    reconciled, remaining = dict(state), dict(approvals)
+    for change, check in zip(journal['changes'], result['checks']):
+        bindings = change.get('bindings', [])
+        if check['phase'] == 'after':
+            after = change.get('after_baseline')
+            if bindings and after is None:
+                # Older journals contain the digest and commit but omit the library path.
+                ident = change['skill_id']
+                record = lookup_package(registry(PRIMARY)[0], ident)
+                after = baseline(ident, dict(record, sha256=change['after_sha256'],
+                                              file_modes=change.get('file_modes', {})), change.get('commit'))
+            for binding in bindings:
+                name = key(binding)
+                reconciled[name] = after
+                approval = remaining.get(name, {})
+                if (approval.get('observed_sha256') == change['before_sha256'] and
+                        approval.get('replacement_sha256') == change['after_sha256']):
+                    remaining.pop(name, None)
+        else:
+            for name, before in change.get('before_baselines', {}).items():
+                if before is None:
+                    reconciled.pop(name, None)
+                else:
+                    reconciled[name] = before
+    if state != reconciled:
+        save(LOCAL / 'baselines.json', reconciled)
+    if approvals != remaining:
+        save(LOCAL / 'accepted-copies.json', remaining)
+    journal.update(state='RECHECKED', checks=result['checks'])
     save(path, journal)
-    return {'rechecked': args.deployment, 'checks': checks, 'replayed': False}
+    return result
 
 
 def main(argv=None):

@@ -40,7 +40,8 @@
 | 未完成状态 | 核对后使用的入口 |
 | --- | --- |
 | 入库收据 | 在 `status` 指出的原工作区执行 `accept --recover ACCEPTANCE_ID --agent codex --reviewed`，恢复后再决定是否重试 |
-| 部署收据 | 保留原件与备份，人工恢复或合并到收据可识别的前后状态，再执行 `recheck DEPLOYMENT_ID --reviewed`；它不重做部署 |
+| 部署收据 | 保留原件与备份，手工恢复到收据记录的某个状态。原先没有副本的目标可以恢复为空。执行 `recheck DEPLOYMENT_ID --reviewed` 校正本机基线并关闭收据 |
+| `incomplete candidate directory` | 核对旧候选中的包和评估记录，将不完整目录移到保留位置，再重试原来的 `fetch` 或 `merge --finalize` |
 | 版本试用收据 | 用 `trial status` 查看；对 preparing、rolling_back、interrupted 等状态使用 `trial recover TRIAL_ID --reviewed`，核对后再决定下一步 |
 
 直接删除收据会丢失恢复依据。`passed` 试用仍占用目标，直到正式采用或回退；普通部署不会接管它。

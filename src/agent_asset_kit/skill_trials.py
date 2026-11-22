@@ -8,7 +8,7 @@ import uuid
 from . import agent_adapters
 from .assetlib import (ROOT, PRIMARY, LOCAL, Stop, baseline, cfg, deploy, file_modes,
                       files_in, key, load, native_path, read_native, registry,
-                      relative, rename_new, save, scan, sha, tree_hash, ACTIVE_TRIAL_STATES, library_path)
+                      relative, rename_new, save, scan, sha, tree_hash, ACTIVE_TRIAL_STATES, library_path, lookup_package)
 from .skill_versions import snapshot
 
 
@@ -22,7 +22,7 @@ def start(args):
     if args.apply and not args.plan:
         raise Stop('trial requires a preview plan; preview first, then apply with --plan PLAN_ID')
     manifest, owners = registry(PRIMARY)
-    current = manifest['packages'][args.skill_id]
+    current = lookup_package(manifest, args.skill_id)
     record, files, commit = snapshot(args.ref, args.skill_id, PRIMARY)
     if record['sha256'] != current['sha256']:
         raise Stop('trial must target the current reviewed catalog revision')

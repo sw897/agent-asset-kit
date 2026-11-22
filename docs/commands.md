@@ -74,9 +74,9 @@
 | `sync --agent codex --message "MESSAGE"` | 检查发布授权和私有远端，提交、合并并推送 `main` |
 | `sync ... --branch-only` | 仅推送已授权的隔离 `assets/` 或 `codex/` 分支，不合并 `main`；不能与 `--local-only` 混用 |
 | `deploy` / `deploy --apply --plan PLAN_ID` | 生成冻结计划 / 核对同一计划后批量分发；默认按全部有效技能和本机启用绑定生成计划 |
-| `recheck DEPLOYMENT_ID --reviewed` | 核对中断部署的已知前后状态，解除已核对收据；不重放写入 |
+| `recheck DEPLOYMENT_ID --reviewed` | 核对中断部署的实际副本，按已知前后状态更新本机基线并关闭收据 |
 
-`sync` 会暂存当前工作区全部允许发布的改动，并强制纳入技能包的必需文件，不是单文件提交命令。已有暂存内容会使它停止，先审阅 `git diff`、`git status` 和暂存区。普通合并保留工作分支和冲突现场。
+`sync` 会暂存当前工作区全部允许发布的改动，并强制纳入技能包的必需文件，不是单文件提交命令。已有暂存内容时会停止。扫描拒绝时会保留暂存内容，可用 `git diff --cached` 审阅并按原提交意图处理后重试。普通合并保留工作分支和冲突现场。
 
 `deploy` 与 `trial start` 的来源是主库。实际批量部署要求主库 `main` 干净且已提交；预览与应用的技能、目标、实例和选项应一致。单技能分享可在首次提交前使用 `share`，不需要先批量部署。
 
@@ -91,7 +91,7 @@
 | `resolve --skill NAME --target codex` | 按 ID、名称或登记别名定位库内包与本机副本 |
 | `note --agent codex --scope global --title TITLE --source SOURCE --file FILE` | 保存经审阅的全局共享笔记；`--inbox` 保存待核实内容，不接受项目范围笔记 |
 | `init-project PROJECT` / `apply-project PLAN_ID --reviewed` | 预览 / 应用静态项目约定，保留已有内容 |
-| `scheduler [--interval 60] [--apply]` | 预览 / 安装 macOS 定时采集任务，不接受候选或推送；间隔单位为秒 |
+| `scheduler [--interval 60] [--apply]` | 预览 / 安装 macOS 定时采集任务。间隔使用正整数秒 |
 | `tick` | 显式执行采集、刷新、生成计划并应用部署；有候选或冲突时停止 |
 
 本机审计可运行技能声明的 Python 解释器读取安装包元数据；原生发现和自定义探针也会启动本机程序。只需库内检查或 CI 时使用 `audit --library-only`。`tick` 是会实际部署的组合命令，系统调度器默认运行的是 `collect`，不是 `tick`。

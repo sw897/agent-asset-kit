@@ -2,13 +2,15 @@
 
 from pathlib import Path
 import subprocess
+import tempfile
 from types import SimpleNamespace
 import urllib.parse
 import urllib.request
 import uuid
 
 from .assetlib import (ROOT, LOCAL, Stop, file_modes, files_in, load, package,
-                      registry, relative, save, scan, sha, tree_hash, write_tree)
+                      registry, relative, save, scan, sha, tree_hash, write_tree, lookup_package,
+                      publish_candidate)
 from .skill_versions import find_base
 
 
@@ -20,7 +22,7 @@ def merge(args):
     if not item or not item.get('skill_id'):
         raise Stop('merge requires an existing stable skill identity')
     manifest, _ = registry()
-    record = manifest['packages'][item['skill_id']]
+    record = lookup_package(manifest, item['skill_id'])
     _, repository = package(ROOT, record)
     incoming = files_in(folder / 'package', item.get('file_modes'))
     if tree_hash(incoming) != item['sha256']:
@@ -111,7 +113,7 @@ def finalize(args):
     if not receipt or receipt['state'] != 'proposed':
         raise Stop('merge is not awaiting review')
     manifest, _ = registry()
-    record = manifest['packages'][receipt['skill_id']]
+    record = lookup_package(manifest, receipt['skill_id'])
     if record['sha256'] != receipt['repository_sha256']:
         raise Stop('repository changed after merge proposal; generate a fresh reconciliation')
     files = files_in(run / 'merged', receipt['file_modes'])
@@ -128,12 +130,16 @@ def finalize(args):
                 base={'repository': record['sha256']}, reconciled=True, merge_id=receipt['id'])
     item['original_source'] = receipt['item']['source']
     item['original_sha256'] = receipt['item']['sha256']
-    write_tree(target / 'package', files)
-    save(target / 'candidate.json', item)
     evaluation = load(LOCAL / 'candidates' / receipt['candidate'] / 'evaluation.json')
-    if evaluation:
-        from .skill_sources import review_identity
-        save(target / 'evaluation.json', dict(evaluation, sha256=item['sha256'],
-             identity_sha256=review_identity(item), merge_reviewed=True))
-    receipt['state'] = 'reviewed';save(run / 'merge.json', receipt)
+    with tempfile.TemporaryDirectory(prefix='candidate-', dir=LOCAL) as temporary:
+        stage = Path(temporary) / 'candidate'
+        write_tree(stage / 'package', files)
+        save(stage / 'candidate.json', item)
+        if evaluation:
+            from .skill_sources import review_identity
+            save(stage / 'evaluation.json', dict(evaluation, sha256=item['sha256'],
+                 identity_sha256=review_identity(item), merge_reviewed=True))
+        publish_candidate(stage, target, item['sha256'])
+    receipt['state'] = 'reviewed'
+    save(run / 'merge.json', receipt)
     return {'candidate': ident, 'sha256': item['sha256'], 'next': 'accept the reconciled candidate --reviewed'}

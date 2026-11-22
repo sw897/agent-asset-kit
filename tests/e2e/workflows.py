@@ -117,7 +117,7 @@ def main():
         execute(['git', 'init', '-b', 'main'], upstream)
         execute(['git', 'config', 'user.name', 'Synthetic upstream'], upstream)
         execute(['git', 'config', 'user.email', 'upstream@example.invalid'], upstream)
-        body = ('---\nname: workflow-demo\ndescription: Synthetic workflow skill.\n---\n\n'
+        body = ('---\nname: workflow-demo\ndescription: Synthetic\n  workflow skill.\n---\n\n'
                 'Local detail base\n\nRemote detail base\n')
         write(upstream / 'skills/demo/SKILL.md', body)
         write(upstream / 'skills/demo/scripts/helper.py', 'print("fixture business result: 42")\n')
@@ -131,6 +131,18 @@ def main():
         check('fetch pins commit, includes license and performs no native install',
               fetched['origin']['commit'] == source_ref and fetched['license_file'] == 'LICENSE' and
               all(not native(a, kind).exists() for kind in ('codex', 'claude', 'hermes')))
+        check('upstream discovery reads a continued description from frontmatter',
+              fetched['description'] == 'Synthetic workflow skill.')
+        receipt_path = a / '.local/candidates' / candidate / 'candidate.json'
+        parked = work / 'interrupted-fetch-receipt.json'
+        receipt_path.rename(parked)
+        rejected_retry = cli('fetch', upstream, '--local-source', '--path', 'skills/demo', '--ref', source_ref, expected=2)
+        check('retry reports incomplete candidate state and preserves its package',
+              'incomplete candidate' in rejected_retry['reason'] and
+              (receipt_path.parent / 'package/SKILL.md').is_file())
+        parked.rename(receipt_path)
+        check('retry of the complete fetch returns the same frozen candidate',
+              cli('fetch', upstream, '--local-source', '--path', 'skills/demo', '--ref', source_ref)['candidate'] == candidate)
         cli('accept', candidate, '--agent', 'codex', '--reviewed', expected=2)
         cli('evaluate', candidate, '--decision', 'trial', '--reason', 'Useful synthetic fixture',
             '--use-case', 'Read exact helper result', '--agent', 'codex', '--reviewed')
@@ -279,9 +291,11 @@ for line in sys.stdin:
                 {'mode': 'inactive-agent', 'any_of': ['agentassets-missing-tool'], 'requires_agent': 'hermes'},
                 {'mode': 'current-platform', 'any_of': ['agentassets-missing-tool'], 'platforms': [sys.platform]},
             ],
-            'files': [{'mode': 'platform-file', 'path': str(work / 'old-platform-path'),
-                       'paths_by_platform': {sys.platform: [str(work / 'missing alternative'), str(existing_file)]}}],
-            'python': [{'mode': 'platform-python', 'interpreter': '.venv/bin/python',
+            'files': [{'mode': 'platform-file',
+                       'paths_by_platform': {sys.platform: [str(work / 'missing alternative'), str(existing_file)]}},
+                      {'mode': 'file-for-another-platform',
+                       'paths_by_platform': {'win32' if os.name != 'nt' else 'darwin': str(existing_file)}}],
+            'python': [{'mode': 'platform-python',
                         'interpreter_by_platform': {sys.platform: '.venv/selected/python'},
                         'distributions': ['synthetic-runtime']}],
         }
@@ -290,7 +304,7 @@ for line in sys.stdin:
         audit = cli('audit', '--target', 'codex', cwd=b, expected=2)
         requirements = next(p for p in audit['packages'] if p['skill_id'] == ident)['requirements']
         check('platform and inactive-Agent modes are explicitly not applicable',
-              sum(r['status'] == 'NOT_APPLICABLE' for r in requirements) == 2)
+              sum(r['status'] == 'NOT_APPLICABLE' for r in requirements) == 3)
         check('missing dependencies on the current platform still block the audit',
               any(r['mode'] == 'current-platform' and r['status'] == 'MISSING' for r in requirements) and
               any(i['code'] == 'RUNTIME_REQUIREMENT_MISSING' and i['severity'] == 'error' for i in audit['issues']))

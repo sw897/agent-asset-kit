@@ -7,6 +7,7 @@ a user prompt, creates a model turn, calls a business tool or approves a request
 import json
 import os
 from pathlib import Path
+import posixpath
 import queue
 import re
 import shutil
@@ -14,10 +15,11 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import unquote
 
 from .assetlib import (ROOT, LOCAL, Stop, atomic, cfg, files_in, inventory, key,
                       load, native_path, package, registry, relative, save, tree_hash, read_native, ACTIVE_TRIAL_STATES,
-                      git, portable_paths)
+                      git, portable_paths, canonical_path)
 from . import agent_adapters
 from . import skill_dependencies
 from .skill_versions import effective
@@ -28,31 +30,41 @@ SKILL_CALL = re.compile(
     r'''(?:\s*,\s*(?:file_path\s*=\s*)?["']([^"']+)["'])?''')
 
 
+MARKDOWN_LINK = re.compile(
+    r'\[[^\]\n]*\]\([ \t]*(?:<([^<>\r\n]+)>|((?:\\[()]|[^\\\s()<>]|\([^()\r\n]*\))+))'
+    r"""(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*\)""")
+RUNTIME_KEYS = ('commands', 'files', 'python')
+PLATFORMS = ('win32', 'darwin', 'linux')
+
+
 def entry_fields(path):
+    return parse_entry_fields(path.read_text(encoding='utf-8'))
+
+
+def parse_entry_fields(text):
     """Extract index scalars, not a substitute for a client's YAML parser."""
-    text = path.read_text(encoding='utf-8')
-    if not text.startswith('---\n') and not text.startswith('---\r\n'):
+    lines = text.splitlines()
+    if not lines or lines[0] != '---':
         raise Stop('frontmatter must start on the first line')
-    parts = re.split(r'^---\s*$', text, maxsplit=2, flags=re.M)
-    if len(parts) != 3:
+    end = next((i for i, line in enumerate(lines[1:], 1) if line.rstrip() == '---'), None)
+    if end is None:
         raise Stop('frontmatter closing marker is missing')
     fields = {}
-    lines = parts[1].splitlines()
-    for i, line in enumerate(lines):
+    for i, line in enumerate(lines[1:end], 1):
         match = re.match(r'^(name|description):\s*(.*)$', line)
         if not match:
             continue
         value = match[2].strip()
-        if value in ('|', '>', '|-', '>-'):
-            following = []
-            for row in lines[i + 1:]:
-                if row and not row[0].isspace():
-                    break
-                following.append(row.strip())
-            value = ' '.join(following)
-        elif len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        fields[match[1]] = value
+        if len(value) > 1 and value[0] == value[-1] and value[0] in '"\'':
+            fields[match[1]] = value[1:-1]
+            continue
+        parts = [] if re.fullmatch(r'[|>][+-]?', value) or not value else [value]
+        for row in lines[i + 1:end]:
+            if row and not row[0].isspace():
+                break
+            if row.strip():
+                parts.append(row.strip())
+        fields[match[1]] = ' '.join(parts)
     if not fields.get('name') or not fields.get('description'):
         raise Stop('name and description are required for discovery')
     return fields
@@ -71,6 +83,10 @@ def contracts(manifest):
         category = r.get('category')
         if category and category not in categories:
             issues.append({'skill': r['name'], 'code': 'UNKNOWN_CATEGORY', 'severity': 'error'})
+        for kind in RUNTIME_KEYS:
+            _, errors = runtime_specs(r, kind)
+            issues.extend({'skill': r['name'], 'requirement': kind, 'reason': error,
+                           'code': 'INVALID_RUNTIME_REQUIREMENT', 'severity': 'error'} for error in errors)
         for alias in r.get('legacy_names', []):
             if alias in by_name or alias in aliases:
                 issues.append({'skill': r['name'], 'code': 'AMBIGUOUS_LEGACY_NAME', 'severity': 'error'})
@@ -89,46 +105,94 @@ def contracts(manifest):
     return issues
 
 
+def packaged_link_target(record, source, destination):
+    target = posixpath.join(posixpath.dirname(source), destination)
+    resolved = posixpath.normpath(target)
+    if resolved.startswith('/'):
+        return None
+    if resolved != '..' and not resolved.startswith('../'):
+        return resolved
+
+    # A link can reenter its own package by name. Check that it does so
+    # in the canonical directory and under every registered native alias.
+    folders = [record['path'], *(binding['path'] for binding in record['bindings'])]
+    paths = set()
+    for folder in folders:
+        folder = posixpath.normpath(folder)
+        path = posixpath.normpath(posixpath.join(folder, target))
+        if path == folder:
+            paths.add('.')
+        elif path.startswith(folder + '/'):
+            paths.add(path[len(folder) + 1:])
+        else:
+            return None
+    return paths.pop() if len(paths) == 1 else None
+
+
 def reference_checks(manifest):
-    by_name = {r['name']: r for r in manifest['packages'].values()}
-    rows, issues = [], []
+    packages = {record['name']: set() for record in manifest['packages'].values()}
+    rows, issues, skill_calls = [], [], []
     placeholders = {'url', 'path', '链接', '相对路径', '相对路径.png'}
-    for r in manifest['packages'].values():
-        folder = ROOT / r['path']
-        for name, (raw, _) in files_in(folder).items():
+    for record in manifest['packages'].values():
+        skill = record['name']
+        try:
+            files = files_in(canonical_path(ROOT, record))
+        except (Stop, OSError, ValueError):
+            # The canonical package check reports the problem for this skill.
+            continue
+        packages[skill] = set(files)
+        directories = {parent.as_posix() for name in files for parent in Path(name).parents}
+        for name, (raw, _) in files.items():
             if not name.endswith('.md'):
                 continue
-            text = raw.decode('utf-8')
+            try:
+                text = raw.decode('utf-8')
+            except UnicodeDecodeError:
+                issues.append({'skill': skill, 'file': name, 'code': 'INVALID_MARKDOWN_ENCODING',
+                               'severity': 'error'})
+                continue
             # Sample output templates and fenced syntax are not live file links.
             prose = re.sub(r'^(`{3,}|~{3,}).*?^\1\s*$', '', text, flags=re.M | re.S)
             link_prose = re.sub(r'(`+)[^`\n]*?\1', '', prose)
-            for match in re.finditer(r'\[[^\]\n]*\]\(([^)\n]+)\)', link_prose):
-                dest = match[1].split('#', 1)[0]
-                if (not dest or re.match(r'^[a-z]+:', dest, re.I) or dest.startswith(('/', '~'))
-                        or any(c in dest for c in '<>*|{} …') or dest.lower() in placeholders
-                        or '...' in dest):
+            for match in MARKDOWN_LINK.finditer(link_prose):
+                dest = (match[1] or match[2]).split('#', 1)[0]
+                if (not dest or re.match(r'^[a-z][a-z0-9+.-]*:', dest, re.I) or dest.startswith(('/', '~'))
+                        or any(c in dest for c in '<>*|{}…') or dest.lower() in placeholders or '...' in dest):
                     continue
-                resolved = (folder / name).parent / dest
-                status = 'PASS' if resolved.exists() else 'MISSING'
-                rows.append({'skill': r['name'], 'file': name, 'reference': dest, 'status': status})
-                if status != 'PASS':
-                    issues.append({'skill': r['name'], 'file': name, 'reference': dest,
-                                   'code': 'MISSING_FILE_REFERENCE', 'severity': 'error'})
+                literal = re.sub(r'\\([()])', r'\1', unquote(dest))
+                resolved = packaged_link_target(record, name, literal)
+                row = {'skill': skill, 'file': name, 'reference': dest}
+                if resolved is None:
+                    status, code = 'OUT_OF_PACKAGE', 'OUT_OF_PACKAGE_REFERENCE'
+                elif resolved not in files and resolved not in directories:
+                    status, code = 'MISSING', 'MISSING_FILE_REFERENCE'
+                else:
+                    status, code = 'PASS', None
+                rows.append(dict(row, status=status))
+                if code:
+                    issues.append(dict(row, code=code, severity='error'))
             for match in SKILL_CALL.finditer(prose):
                 dep, dest = match.groups()
                 if not dest or any(c in dest for c in '<>*{}'):
                     continue
-                if dep not in by_name:
-                    rows.append({'skill': r['name'], 'file': name, 'dependency': dep,
-                                 'reference': dest, 'status': 'NATIVE_OR_EXTERNAL_UNVERIFIED'})
+                row = {'skill': skill, 'file': name, 'dependency': dep, 'reference': dest}
+                try:
+                    ref = relative(dest).as_posix()
+                except Stop:
+                    rows.append(dict(row, status='INVALID'))
+                    issues.append(dict(row, code='INVALID_SKILL_REFERENCE', severity='error'))
                     continue
-                path = ROOT / by_name[dep]['path'] / relative(dest)
-                status = 'PASS' if path.is_file() else 'MISSING'
-                rows.append({'skill': r['name'], 'file': name, 'dependency': dep,
-                             'reference': dest, 'status': status})
-                if status != 'PASS':
-                    issues.append({'skill': r['name'], 'file': name, 'dependency': dep,
-                                   'reference': dest, 'code': 'MISSING_SKILL_REFERENCE', 'severity': 'error'})
+                rows.append(row)
+                skill_calls.append((row, ref))
+    for row, ref in skill_calls:
+        dep = row['dependency']
+        if dep not in packages:
+            row['status'] = 'NATIVE_OR_EXTERNAL_UNVERIFIED'
+        elif ref in packages[dep]:
+            row['status'] = 'PASS'
+        else:
+            row['status'] = 'MISSING'
+            issues.append(dict(row, code='MISSING_SKILL_REFERENCE', severity='error'))
     return rows, issues
 
 
@@ -143,80 +207,147 @@ def legacy_commands(config):
     return result
 
 
+def nonempty_string(value):
+    return isinstance(value, str) and bool(value.strip()) and '\0' not in value
+
+
+def validate_runtime_spec(kind, spec):
+    if not isinstance(spec, dict):
+        raise Stop('each requirement must be an object')
+    if 'mode' in spec and not nonempty_string(spec['mode']):
+        raise Stop('mode must be a nonempty string')
+    if 'optional' in spec and type(spec['optional']) is not bool:
+        raise Stop('optional must be a boolean')
+    platforms = spec.get('platforms', [])
+    if not isinstance(platforms, list) or any(p not in PLATFORMS for p in platforms):
+        raise Stop('platforms must name supported Python platforms')
+    if 'requires_agent' in spec and spec['requires_agent'] not in agent_adapters.KINDS:
+        raise Stop('requires_agent must name a known Agent kind')
+    if kind == 'commands':
+        options = spec.get('any_of')
+        if not isinstance(options, list) or not options or not all(map(nonempty_string, options)):
+            raise Stop('any_of must be a nonempty list of command names')
+        return
+    field, mapping = ('path', 'paths_by_platform') if kind == 'files' else (
+        'interpreter', 'interpreter_by_platform')
+    selections = spec.get(mapping, {})
+    if not isinstance(selections, dict) or any(key not in PLATFORMS for key in selections):
+        raise Stop(f'{mapping} must map supported platforms to paths')
+    if field not in spec and not selections:
+        raise Stop(f'provide {field} or {mapping}')
+    values = list(selections.values())
+    if field in spec:
+        values.append(spec[field])
+    if kind == 'files':
+        if 'env' in spec and not nonempty_string(spec['env']):
+            raise Stop('env must name an environment variable')
+        for value in values:
+            choices = [value] if isinstance(value, str) else value
+            if not isinstance(choices, list) or not choices or not all(map(nonempty_string, choices)):
+                raise Stop('file paths must be a path string or a nonempty list of path strings')
+    else:
+        if not all(map(nonempty_string, values)):
+            raise Stop('interpreter paths must be nonempty relative path strings')
+        for value in values:
+            relative(value)
+        distributions = spec.get('distributions')
+        if not isinstance(distributions, list) or not all(map(nonempty_string, distributions)):
+            raise Stop('distributions must be a list of names')
+
+
+def runtime_specs(record, kind):
+    declared = record.get('requirements', {}).get(kind, [])
+    if not isinstance(declared, list):
+        return [], [f'requirements.{kind} must be a list']
+    valid, errors = [], []
+    for spec in declared:
+        try:
+            validate_runtime_spec(kind, spec)
+        except Stop as error:
+            errors.append(str(error))
+        else:
+            valid.append(spec)
+    return valid, errors
+
+
 def applicability(spec, config):
     platforms = spec.get('platforms', [])
-    if not isinstance(platforms, list) or any(p not in ('win32', 'darwin', 'linux') for p in platforms):
-        raise Stop('requirement platforms must name supported Python platforms')
     if platforms and sys.platform not in platforms:
         return {'status': 'NOT_APPLICABLE', 'reason': 'mode is limited to other platforms',
                 'platforms': platforms}
     required = spec.get('requires_agent')
-    if required and required not in agent_adapters.KINDS:
-        raise Stop('requirement references an unknown Agent kind')
     if required and not any(row['kind'] == required for row in agent_adapters.configured(config)):
         return {'status': 'NOT_APPLICABLE', 'reason': 'mode requires an enabled local Agent',
                 'requires_agent': required}
     return None
 
 
+def requirement_row(spec):
+    return {'mode': spec.get('mode', 'default'), 'optional': spec.get('optional', False)}
+
+
 def command_checks(record, config):
     rows = []
-    requirements = record.get('requirements', {})
-    for spec in requirements.get('commands', []):
-        options = spec.get('any_of', [])
+    for spec in runtime_specs(record, 'commands')[0]:
+        options = spec['any_of']
+        row = dict(requirement_row(spec), any_of=options)
         skipped = applicability(spec, config)
         if skipped:
-            rows.append({'mode': spec.get('mode', 'default'), 'any_of': options,
-                         'optional': bool(spec.get('optional')), **skipped})
+            rows.append(dict(row, **skipped))
             continue
-        found = next((shutil.which(name) for name in options if shutil.which(name)), None)
-        rows.append({'mode': spec.get('mode', 'default'), 'any_of': options,
-                     'optional': bool(spec.get('optional')), 'status': 'FOUND' if found else 'MISSING',
-                     'resolved_path': found, 'level': 'executable-location-only'})
-    for spec in requirements.get('files', []):
+        found = next(filter(None, map(shutil.which, options)), None)
+        rows.append(dict(row, status='FOUND' if found else 'MISSING',
+                         resolved_path=found, level='executable-location-only'))
+    for spec in runtime_specs(record, 'files')[0]:
+        row = requirement_row(spec)
         skipped = applicability(spec, config)
         if skipped:
-            rows.append({'mode': spec.get('mode', 'default'), 'optional': bool(spec.get('optional')), **skipped})
+            rows.append(dict(row, **skipped))
             continue
-        override = os.environ.get(spec.get('env', '')) if spec.get('env') else None
-        choices = spec.get('paths_by_platform', {}).get(sys.platform, [spec['path']])
+        override = os.environ.get(spec.get('env', ''))
+        choices = override or spec.get('paths_by_platform', {}).get(sys.platform, spec.get('path'))
+        if choices is None:
+            rows.append(dict(row, status='NOT_APPLICABLE', reason='no path for this platform'))
+            continue
         if isinstance(choices, str):
             choices = [choices]
-        if not isinstance(choices, list) or not choices or any(not isinstance(p, str) for p in choices):
-            raise Stop('file requirements need nonempty platform path strings')
-        paths = [Path(os.path.expandvars(p)).expanduser() for p in ([override] if override else choices)]
-        path = next((p for p in paths if p.exists()), paths[0])
-        rows.append({'mode': spec.get('mode', 'default'), 'file': str(path),
-                     'optional': bool(spec.get('optional')), 'status': 'FOUND' if path.exists() else 'MISSING',
-                     'level': 'file-existence-only'})
+        paths = [Path(os.path.expandvars(p)).expanduser() for p in choices]
+        found = next((p for p in paths if p.exists()), None)
+        rows.append(dict(row, file=str(found or paths[0]), status='FOUND' if found else 'MISSING',
+                         level='file-existence-only'))
     return rows
 
 
 def runtime_checks(path, record, config):
     rows = []
-    for spec in record.get('requirements', {}).get('python', []):
+    for spec in runtime_specs(record, 'python')[0]:
+        row = requirement_row(spec)
         skipped = applicability(spec, config)
         if skipped:
-            rows.append({'mode': spec.get('mode', 'default'), 'optional': bool(spec.get('optional')), **skipped})
+            rows.append(dict(row, **skipped))
             continue
-        selected = spec.get('interpreter_by_platform', {}).get(sys.platform, spec['interpreter'])
+        selected = spec.get('interpreter_by_platform', {}).get(sys.platform, spec.get('interpreter'))
+        if selected is None:
+            rows.append(dict(row, status='NOT_APPLICABLE', reason='no interpreter for this platform'))
+            continue
         interpreter = path / relative(selected)
-        row = {'mode': spec.get('mode', 'default'), 'interpreter': str(interpreter),
-               'level': 'installed-distribution-metadata-only', 'optional': bool(spec.get('optional'))}
+        row.update(interpreter=str(interpreter), level='installed-distribution-metadata-only')
         if not interpreter.is_file():
             row.update(status='MISSING', missing=spec['distributions'])
         else:
-            script = '''import importlib.metadata as m,json,sys
+            script = """import importlib.metadata as m,json,sys
 out={}
 for name in json.loads(sys.argv[1]):
  try: out[name]=m.version(name)
  except m.PackageNotFoundError: out[name]=None
 print(json.dumps(out))
-'''
+"""
             try:
                 result = subprocess.run([str(interpreter), '-c', script, json.dumps(spec['distributions'])],
                                         capture_output=True, text=True, timeout=10)
                 versions = json.loads(result.stdout) if result.returncode == 0 else {}
+                if not isinstance(versions, dict):
+                    raise ValueError('invalid interpreter response')
                 missing = [name for name in spec['distributions'] if not versions.get(name)]
                 row.update(status='MISSING' if missing else 'FOUND', versions=versions, missing=missing)
             except (OSError, ValueError, subprocess.TimeoutExpired):
@@ -231,7 +362,6 @@ class JsonLinesClient:
         self.process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.messages = queue.Queue()
-        self.buffer = []
         def reader():
             try:
                 for line in self.process.stdout:
@@ -241,6 +371,8 @@ class JsonLinesClient:
                         self.messages.put(json.loads(line))
                     except (ValueError, UnicodeDecodeError):
                         continue
+            except (OSError, ValueError):
+                pass
             finally:
                 self.messages.put(None)
         threading.Thread(target=reader, daemon=True).start()
@@ -405,7 +537,12 @@ def audit(args, native=False):
             item.update(canonical='FAIL', reason=str(error))
             issues.append({'skill': record['name'], 'code': 'CANONICAL_INVALID', 'severity': 'error'})
         packages.append(item)
-        stable, _, stable_commit = effective(ident, record, ROOT)
+        try:
+            stable, _, stable_commit = effective(ident, record, ROOT)
+        except (Stop, OSError, ValueError):
+            if item['canonical'] == 'FAIL':
+                continue
+            raise
         expected_record = stable or record
         for binding in [b for logical in record['bindings'] for b in agent_adapters.expand(config, logical)]:
             if binding['agent'] not in selected:

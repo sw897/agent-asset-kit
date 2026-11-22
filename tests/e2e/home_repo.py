@@ -105,6 +105,13 @@ def main():
             saved = json.loads(run(save_command))
             check('save from the project returns edits to the default Home Repo', saved['library'] == str(default)
                   and cli('catalog')['packages'][saved['skill_id']]['name'] == 'fixture-skill')
+            baseline_path = default / '.local/baselines.json'
+            baseline_path.unlink()
+            capture = cli('collect')
+            baseline = json.loads(baseline_path.read_text(encoding='utf-8'))['codex:fixture-skill']
+            check('collect restores matching metadata before the first Git commit',
+                  not capture['blocked'] and not capture['candidates'] and
+                  baseline['skill_id'] == saved['skill_id'] and baseline['commit'] is None)
             run(['git', '-C', default, 'config', 'user.name', 'Synthetic Home Repo'])
             run(['git', '-C', default, 'config', 'user.email', 'fixture@example.invalid'])
             committed = cli('sync', '--agent', 'codex', '--message', 'Synthetic onboarding', '--local-only')
@@ -116,6 +123,22 @@ def main():
             check('init with agents completes local setup in one command without touching native files',
                   result['configured'] and result['enabled_agents'] == ['claude'] and
                   Path(custom_config['gitleaks']).resolve() == scanner and not (home / '.claude').exists())
+            empty_attach = cli('--root', custom, 'attach')
+            check('new instruction previews start at the first marker',
+                  empty_attach['changes'][0]['content'].startswith('<!-- AGENT_ASSET_KIT_START -->'))
+            interval_error = cli('--root', custom, 'scheduler', '--interval', '0', expected=2)
+            check('scheduler rejects a nonpositive interval before installation',
+                  'positive number of seconds' in interval_error['reason'])
+            blocks = custom / 'agents/instruction-blocks.json'
+            template = custom / 'agents/fixture.md'
+            blocks.write_text('{"FIXTURE_RULES":"agents/fixture.md"}', encoding='utf-8')
+            template.write_text('{{unknown_fixture_placeholder}}\n', encoding='utf-8')
+            invalid_attach = cli('--root', custom, 'attach', expected=2)
+            check('unknown instruction placeholders are reported against the template',
+                  'unknown_fixture_placeholder' in invalid_attach['reason'] and
+                  'skills_root' in invalid_attach['reason'] and not (home / '.claude').exists())
+            blocks.unlink()
+            template.unlink()
             nested = custom / 'memory/shared'
             check('the enclosing initialized library takes precedence over the default', cli('status', cwd=nested)['primary'] == str(custom))
             environment['AGENT_ASSET_KIT_ROOT'] = str(custom)

@@ -89,7 +89,7 @@ aak deploy
 aak deploy --apply --plan PLAN_ID
 ```
 
-失败时仍需准备标识同一技能、内容和实际检查的证据，把结果记录为 `trial finish TRIAL_ID --result failed --reason "Observed failure" --evidence /path/to/evidence.json --reviewed`，再用 `trial rollback TRIAL_ID --reviewed`。回退前复核当前副本和备份；并发编辑会停止回退并保留现场。preparing、rolling_back、interrupted 状态仍保有目标，passed 试用在采用或回退前也占用目标。试用中断用 `trial recover TRIAL_ID --reviewed`；独立部署中断用 `recheck DEPLOYMENT_ID --reviewed`，不会自动重放写入。
+失败时仍需准备标识同一技能、内容和实际检查的证据，把结果记录为 `trial finish TRIAL_ID --result failed --reason "Observed failure" --evidence /path/to/evidence.json --reviewed`，再用 `trial rollback TRIAL_ID --reviewed`。回退前复核当前副本和备份；并发编辑会停止回退并保留现场。preparing、rolling_back、interrupted 状态仍保有目标，passed 试用在采用或回退前也占用目标。试用中断用 `trial recover TRIAL_ID --reviewed`；独立部署中断时，先把目标恢复到收据记录的部署前或部署后状态，再执行 `recheck DEPLOYMENT_ID --reviewed`。首次分发的目标可恢复为空，目标均已核对后命令按实际副本校正本机基线。
 
 新包没有旧正式版本时，待试用修订会被普通分发跳过；已有包的旧正式版本继续生效。`promote --without-trial` 是明确审阅后跳过业务试用记录的采用方式，不代表业务验证通过，需写明理由。对未处于待试用状态的技能，普通 `revision` 或快捷 `save` 会直接更新可供分发的已审版本；要保留旧正式版本并限定试用，应在入库或修订时明确使用 `--trial`。已处于待试用状态的包继续等待明确采用。
 
@@ -124,7 +124,7 @@ aak evaluate CANDIDATE_ID --decision trial --reason "Reviewed complete package" 
 
 Home Repo 的 CI 可以运行 `aak audit --library-only --output artifacts/library-audit.json`。它检查 Git 跟踪路径的可移植性、包的字节与逻辑模式、登记、技能引用、技能依赖关系、MCP 声明及不可变正式版本，无需 `.local/config.json`、Agent 安装或业务依赖。不读取本机基线、试用状态或原生目录，不检查命令与运行环境，也不替代敏感信息扫描。包含正式版本指针的库应使用完整 Git 历史；浅克隆缺少所需提交会明确失败。该模式不能搭配本机 `--target` 或 `--instance` 选择，CI 示例见[验证说明](validation.md#验证个人-home-repo)。
 
-macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装；默认间隔 60 秒，不会后台接受候选或发布。其他平台调度尚未实现。`tick` 是独立的组合命令，会采集、刷新并实际部署同次生成的计划；发现候选或阻塞项即停止。不要将它当作只读检查或默认采集任务。
+macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装；默认间隔为 60 秒，自定义间隔须为正整数秒。其他平台调度尚未实现。`tick` 是独立的组合命令，会采集、刷新并实际部署同次生成的计划；发现候选或阻塞项即停止。不要将它当作只读检查或默认采集任务。
 
 ## 技能依赖声明
 
@@ -155,9 +155,9 @@ macOS 的 `scheduler` 只预览本地采集任务，显式 `--apply` 才安装�
 }
 ```
 
-`dependencies[].skill` 使用登记名称；必需依赖应在相应客户端有目标绑定，条件依赖用 `conditional` 和 `when` 说明。本机检查中，`platforms` 接受 `darwin`、`linux`、`win32`，`requires_agent` 接受已知客户端类型；不适用的模式返回 `NOT_APPLICABLE`。`files` 可用 `paths_by_platform` 指定各平台的路径列表，`env` 提供现场覆盖。Python 解释器路径相对原生技能目录，运行环境留在本机，不随完整技能资产复制。
+`dependencies[].skill` 使用登记名称；必需依赖应在相应客户端有目标绑定，条件依赖用 `conditional` 和 `when` 说明。本机检查中，`platforms` 接受 `darwin`、`linux`、`win32`，`requires_agent` 接受已知客户端类型；不适用的模式返回 `NOT_APPLICABLE`。`files` 可用 `paths_by_platform` 指定各平台的路径或路径列表，`env` 提供现场覆盖。`python` 用 `interpreter_by_platform` 指定各平台的解释器。平台映射未命中时取通用 `path` 或 `interpreter`，省略通用值时该平台返回 `NOT_APPLICABLE`。Python 解释器路径相对原生技能目录，运行环境留在本机，不随完整技能资产复制。
 
-这些声明不会安装依赖、运行技能正文或认证服务。普通审计检查命令位置、文件存在性和 Python 安装元数据；必需项缺失会阻塞，可选项缺失产生警告。`audit --library-only` 检查技能依赖关系与 MCP 声明，不执行这些本机运行条件。
+这些声明不会安装依赖、运行技能正文或认证服务。普通审计检查命令位置、文件存在性和 Python 安装元数据；必需项缺失会阻塞，可选项缺失产生警告。`audit --library-only` 检查技能依赖关系、运行依赖字段和 MCP 声明。本机可用性由普通审计检查。Markdown 相对链接须指向技能包随附的文件或目录，登记的原生别名也应保留链接可达性。
 
 `requirements.mcp` 沿用以下格式。先在技能包内准备说明文件，再把声明加入该技能的 manifest 记录：
 

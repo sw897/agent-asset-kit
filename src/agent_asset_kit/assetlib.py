@@ -57,6 +57,13 @@ def git(*args, cwd=ROOT, check=True):
     return run(['git', *args], cwd=cwd, check=check)
 
 
+def git_head(root):
+    if not (root / '.git').exists():
+        return None
+    result = git('rev-parse', '--verify', 'HEAD', cwd=root, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def load(path, default=None):
     library_path(path)
     return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else default
@@ -186,30 +193,47 @@ def locked():
 
 
 def scan(folder):
-    scanner = cfg().get('gitleaks') or shutil.which('gitleaks')
-    if not scanner or not Path(scanner).is_file():
-        raise Stop('Gitleaks is required. Install gitleaks on PATH, then retry (check with gitleaks version).')
-    rules = LOCAL / 'scanner.toml'
-    rules.write_text('[extend]\nuseDefault = true\n', encoding='utf-8')
-    report = LOCAL / 'last-scan.json'
+    configured = cfg().get('gitleaks')
+    scanner = configured or shutil.which('gitleaks')
+    if configured and not Path(configured).is_file():
+        raise Stop('configured Gitleaks executable is missing. Check gitleaks in .local/config.json')
+    if not scanner:
+        raise Stop('Gitleaks is required on PATH. Check with gitleaks version')
+    report = library_path(LOCAL / 'last-scan.json')
     report.unlink(missing_ok=True)
-    result = run([scanner, 'dir', folder, '--config', rules, '--ignore-gitleaks-allow',
-                  '--gitleaks-ignore-path', LOCAL / 'no-ignore-file', '--redact', '--no-banner',
-                  '--no-color', '--log-level', 'error', '--max-archive-depth', '2',
-                  '--report-format', 'json', '--report-path', report], check=False)
-    raw = load(report, []) or []
-    if result.returncode != 0 and (result.returncode != 1 or not raw):
-        raise Stop(f'Gitleaks failed ({result.returncode}); import/publication stopped')
-    # Persist only identifying metadata, never matched text, credential values or snippets.
-    findings = []
-    folder = Path(folder).resolve()
-    for item in raw:
-        path = Path(item['File'])
-        try:
-            name = path.resolve().relative_to(folder).as_posix()
-        except ValueError:
-            name = path.as_posix()
-        findings.append({'file': name, 'line': item['StartLine'], 'rule': item['RuleID']})
+    with tempfile.TemporaryDirectory(prefix='scanner-', dir=library_path(LOCAL)) as temporary:
+        scratch = Path(temporary)
+        rules = scratch / 'scanner.toml'
+        atomic(rules, b'[extend]\nuseDefault = true\n')
+        result = run([scanner, 'dir', folder, '--config', rules, '--ignore-gitleaks-allow',
+                      '--gitleaks-ignore-path', scratch / 'no-ignore-file', '--redact', '--no-banner',
+                      '--no-color', '--log-level', 'error', '--max-archive-depth', '2',
+                      '--report-format', 'json', '--report-path', '-'], check=False)
+    if result.returncode not in (0, 1):
+        raise Stop(f'Gitleaks failed ({result.returncode}). Import/publication stopped')
+    # Raw scanner output stays in memory, including during an interrupted scan.
+    try:
+        raw = json.loads(result.stdout)
+        if raw is None:
+            raw = []
+        if not isinstance(raw, list):
+            raise ValueError()
+        folder = Path(folder).resolve()
+        findings = []
+        for item in raw:
+            filename, line, rule = item['File'], item['StartLine'], item['RuleID']
+            if not isinstance(filename, str) or type(line) is not int or not isinstance(rule, str):
+                raise ValueError()
+            path = Path(filename)
+            try:
+                name = path.resolve().relative_to(folder).as_posix()
+            except ValueError:
+                name = path.as_posix()
+            findings.append({'file': name, 'line': line, 'rule': rule})
+    except (KeyError, TypeError, ValueError):
+        raise Stop('Gitleaks returned an invalid report. Import/publication stopped') from None
+    if result.returncode == 1 and not findings:
+        raise Stop('Gitleaks exited with a failure and no findings. Import/publication stopped')
     save(report, findings)
     if findings:
         rejection = LOCAL / 'scan-rejections' / (uuid.uuid4().hex + '.json')
@@ -217,27 +241,42 @@ def scan(folder):
         raise Stop('secret scanner rejected content; see ' + str(rejection.relative_to(PRIMARY)))
 
 
+def ignored_package_file(name):
+    return name in TRANSIENT or name.endswith(('.pyc', '.log'))
+
+
+def restricted_package_file(name):
+    env_secret = name.startswith('.env.') and name not in {'.env.example', '.env.sample', '.env.template'}
+    database = re.search(r'\.(?:sqlite\d*|db)(?:-(?:wal|shm|journal))?$', name, re.I)
+    return name in DENIED or env_secret or database or Path(name).suffix.lower() in {'.key', '.pem', '.p12', '.pfx'}
+
+
 def files_in(folder, modes=None):
     if not folder.is_dir():
         raise Stop('package directory is missing')
     result = {}
     total = 0
+    root = folder.resolve()
     for current, dirs, names in os.walk(folder, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in TRANSIENT)
         if any(link_like(Path(current) / d) for d in dirs):
             raise Stop('internal directory link requires manual review')
         for name in sorted(names):
-            if name in TRANSIENT or name.endswith(('.pyc', '.log')):
+            if ignored_package_file(name):
                 continue
             path = Path(current) / name
-            content_path = path.resolve()
-            if link_like(path) and not content_path.is_relative_to(folder.resolve()):
+            try:
+                content_path = path.resolve()
+            except (OSError, RuntimeError):
+                raise Stop('file path cannot be resolved; review package links') from None
+            if not content_path.is_relative_to(root):
                 raise Stop('external file link requires manual review')
+            resolved = content_path.relative_to(root)
+            if ignored_package_file(resolved.name) or any(part in TRANSIENT for part in resolved.parts[:-1]):
+                raise Stop('file link to excluded package content requires manual review')
             if not content_path.is_file():
                 raise Stop('special file requires manual review')
-            env_secret = name.startswith('.env.') and name not in {'.env.example', '.env.sample', '.env.template'}
-            database = bool(re.search(r'\.(?:sqlite\d*|db)(?:-(?:wal|shm|journal))?$', name, re.I))
-            if name in DENIED or env_secret or database or path.suffix.lower() in {'.key', '.pem', '.p12', '.pfx'}:
+            if restricted_package_file(name) or (name != resolved.name and restricted_package_file(resolved.name)):
                 raise Stop('credential/runtime file requires manual review')
             size = content_path.stat().st_size
             total += size
@@ -442,6 +481,13 @@ def registry(root=ROOT):
     return result, owners
 
 
+def lookup_package(manifest, ident):
+    result = manifest['packages'].get(ident)
+    if result is None:
+        raise Stop('unknown skill ID. Find a registered skill with aak catalog or aak resolve')
+    return result
+
+
 def pending_quick_trials():
     pending = set()
     for path in (LOCAL / 'quick-trials').glob('*.json'):
@@ -458,6 +504,7 @@ def collect():
     sources, excluded = inventory(config)
     quick_trials = pending_quick_trials()
     candidates, blocked = [], []
+    head = git_head(PRIMARY)
     for item in sources:
         source = Path(item['source'])
         if source in quick_trials:
@@ -474,9 +521,13 @@ def collect():
             if ident and all(state.get(key(b), {}).get('sha256') == fingerprint for b in bindings):
                 continue
             if ident and manifest['packages'][ident]['sha256'] == fingerprint:
+                record = manifest['packages'][ident]
+                commit = None
+                if head and git('diff', '--quiet', head, '--', record['path'], 'skills/manifest.json',
+                                cwd=PRIMARY, check=False).returncode == 0:
+                    commit = head
                 for b in bindings:
-                    state[key(b)] = baseline(ident, manifest['packages'][ident],
-                        git('rev-parse', 'HEAD', cwd=PRIMARY).stdout.strip(), files)
+                    state[key(b)] = baseline(ident, record, commit, files)
                 continue
             bases = {key(b): state.get(key(b), {}).get('sha256') for b in bindings}
             candidate_id = sha(json.dumps({'source': str(source), 'sha256': fingerprint,
@@ -526,6 +577,37 @@ def rename_new(source, dest):
     if rc:
         errno = ctypes.get_errno()
         raise OSError(errno, os.strerror(errno), str(dest))
+
+
+def publish_candidate(stage, destination, digest):
+    """Publish the complete tree or reuse an already verified candidate."""
+    library_path(destination)
+    if destination.exists():
+        try:
+            if not destination.is_dir():
+                raise ValueError()
+            contents = library_path(destination / 'package')
+            entry = library_path(contents / 'SKILL.md')
+            previous = load(destination / 'candidate.json')
+            evaluation = library_path(destination / 'evaluation.json')
+            if (not isinstance(previous, dict) or previous.get('id') != destination.name or
+                    not previous.get('sha256') or not isinstance(previous.get('file_modes', {}), dict) or
+                    not entry.is_file() or ((stage / 'evaluation.json').is_file() and not evaluation.is_file())):
+                raise ValueError()
+        except (OSError, ValueError):
+            raise Stop('incomplete candidate directory. Inspect and preserve it before retrying') from None
+        if (previous['sha256'] != digest or
+                tree_hash(files_in(contents, previous.get('file_modes'))) != digest):
+            raise Stop('existing candidate content differs. Content retained for review')
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    rename_new(stage, destination)
+
+
+def restore_deployment_backup(target, change, journal, journal_path):
+    rename_new(Path(change['backup']), target)
+    change.update(state='RESTORED', backup=None)
+    save(journal_path, journal)
 
 
 def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids=None,
@@ -628,10 +710,12 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
                         raise Stop('local Agent roots overlap with incompatible skill versions')
                     prior['bindings'].append(binding)
                     continue
-                if target.is_symlink() and not target.exists():
-                    raise Stop(f'broken native link: {key(binding)}')
+                linked = link_like(target)
                 exists = target.exists()
-                local_hash = tree_hash(read_native(config, binding, record, state)) if exists else None
+                if linked and not exists:
+                    raise Stop(f'broken native link: {key(binding)}')
+                native = read_native(config, binding, record, state) if exists else {}
+                local_hash = tree_hash(native) if exists else None
                 base = state.get(key(binding), {}).get('sha256')
                 consent = approvals.get(key(binding), {})
                 reconciled = consent.get('observed_sha256') == local_hash and consent.get('replacement_sha256') == record['sha256']
@@ -639,7 +723,7 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
                     raise Stop(f'native/repository conflict: {key(binding)}; collect and reconcile first')
                 if not exists and base and not restore_missing:
                     raise Stop(f'native copy missing: {key(binding)}; removal does not delete the asset')
-                if local_hash == record['sha256'] and not target.is_symlink():
+                if local_hash == record['sha256'] and not linked:
                     if apply:
                         state[key(binding)] = baseline(ident, record, commit, files)
                     continue
@@ -648,8 +732,8 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
                     raise Stop(f'native runtime exists: {key(binding)}; review then use --preserve-runtime to retain it')
                 plan = {'id': ident, 'record': record, 'bindings': [binding], 'root': root,
                         'target': target, 'files': files, 'observed': local_hash, 'runtime': runtime,
-                        'resolved_target': str(target.resolve()),
-                        'before_file_modes': file_modes(read_native(config, binding, record, state)) if exists else {},
+                        'resolved_target': str(target.resolve()), 'linked': linked,
+                        'before_file_modes': file_modes(native),
                         'commit': commit}
                 seen[identity] = plan
                 plans.append(plan)
@@ -657,7 +741,7 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
                                 'path': binding['path'], 'source_commit': commit, 'sha256': record['sha256'],
                                 'before_sha256': local_hash, 'target': str(target),
                                 'resolved_target': str(target.resolve()),
-                                'action': 'replace-legacy-link' if target.is_symlink() else 'update' if exists else 'create',
+                                'action': 'replace-legacy-link' if linked else 'update' if exists else 'create',
                                 'local_runtime': runtime})
     signature = sha(json.dumps({'actions': actions, 'versions': selections,
                                'config': config.get('agents', config.get('skill_roots', {})),
@@ -697,51 +781,57 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
             ident, record, root, target, files, observed, runtime = (
                 plan[k] for k in ('id', 'record', 'root', 'target', 'files', 'observed', 'runtime'))
             binding = plan['bindings'][0]
-            if str(target.resolve()) != plan['resolved_target']:
+            if str(target.resolve()) != plan['resolved_target'] or link_like(target) != plan['linked']:
                 raise Stop('physical native target changed during preparation; no target switch performed')
             current = tree_hash(read_native(config, binding, record, state)) if target.exists() else None
             if current != observed:
                 raise Stop(f'native copy changed during preparation: {key(binding)}')
             backup = root.parent / '.agent-asset-kit-backups' / journal['id'] / binding['instance'] / binding['path']
             backup.parent.mkdir(parents=True, exist_ok=True)
-            change = {'target': str(target), 'backup': None, 'staging': str(stage), 'state': 'PREPARED',
-                      'before_sha256': observed, 'after_sha256': record['sha256'],
+            after = baseline(ident, record, plan['commit'], files)
+            change = {'target': str(target), 'backup': str(backup) if observed is not None else None,
+                      'staging': str(stage), 'state': 'PREPARED',
+                      'before_sha256': observed, 'after_sha256': record['sha256'], 'after_baseline': after,
                       'before_file_modes': plan['before_file_modes'],
+                      'before_link_target': plan['resolved_target'] if plan['linked'] else None,
                       'bindings': plan['bindings'], 'skill_id': ident, 'commit': plan['commit'],
                       'before_baselines': {key(b): state.get(key(b)) for b in plan['bindings']},
                       'file_modes': file_modes(files),
                       'local_runtime': runtime, 'runtime_relocation': 'NOT_VERIFIED' if runtime else 'NOT_APPLICABLE'}
             journal['changes'].append(change)
             save(journal_path, journal)
-            if target.exists() or target.is_symlink():
+            if observed is not None:
                 rename_new(target, backup)
-                change['backup'] = str(backup)
                 change['state'] = 'BACKED_UP'
                 save(journal_path, journal)
-                if tree_hash(read_native(config, binding, record, state, backup.resolve())) != observed:
-                    rename_new(backup, target)
-                    raise Stop('native copy changed while being backed up; original restored')
-            target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    if tree_hash(read_native(config, binding, record, state, backup.resolve())) != observed:
+                        raise Stop('native copy changed while being backed up')
+                except (Stop, OSError, ValueError) as error:
+                    restore_deployment_backup(target, change, journal, journal_path)
+                    raise Stop(f'native backup could not be verified; original restored: {error}') from None
             try:
+                target.parent.mkdir(parents=True, exist_ok=True)
                 rename_new(stage, target)
             except BaseException:
-                if change['backup'] and not target.exists() and not target.is_symlink():
-                    rename_new(backup, target)
+                if change['backup'] and not target.exists() and not link_like(target):
+                    restore_deployment_backup(target, change, journal, journal_path)
                 raise
-            if target.is_symlink() or tree_hash(files_in(target, file_modes(files))) != record['sha256']:
+            if link_like(target) or tree_hash(files_in(target, file_modes(files))) != record['sha256']:
                 raise Stop('deployed copy failed readback; original retained in backup')
             change['state'] = 'VERIFIED'
             for binding in plan['bindings']:
-                state[key(binding)] = baseline(ident, record, plan['commit'], files)
+                state[key(binding)] = after
                 approvals.pop(key(binding), None)
             save(LOCAL / 'baselines.json', state)
             save(journal_path, journal)
-        journal['state'] = 'COMPLETE'
-        save(journal_path, journal)
         save(LOCAL / 'baselines.json', state)
         save(LOCAL / 'accepted-copies.json', approvals)
+        journal['state'] = 'COMPLETE'
+        save(journal_path, journal)
     except BaseException:
-        journal['state'] = 'INTERRUPTED' if journal['changes'] else 'ABORTED'
+        journal['state'] = ('INTERRUPTED' if any(c['state'] != 'RESTORED' for c in journal['changes'])
+                            else 'ABORTED')
         save(journal_path, journal)
         raise
     finally:

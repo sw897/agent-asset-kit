@@ -4,7 +4,7 @@ import json
 import re
 import subprocess
 
-from .assetlib import (ROOT, PRIMARY, LOCAL, Stop, file_modes, files_in, git, load, package,
+from .assetlib import (ROOT, PRIMARY, LOCAL, Stop, file_modes, files_in, git, git_head, load, lookup_package, package,
                       portable_paths, relative, save, tree_hash)
 
 
@@ -85,10 +85,7 @@ def effective(ident, record, root=PRIMARY):
     if record.get('lifecycle') == 'reviewed':
         return None, None, None
     _, files = package(root, record)
-    if not (root / '.git').exists():
-        return record, files, None
-    head = git('rev-parse', '--verify', 'HEAD', cwd=root, check=False)
-    return record, files, head.stdout.strip() if not head.returncode else None
+    return record, files, git_head(root)
 
 
 def release_change(manifest, ident, old, pending, persist=True):
@@ -121,7 +118,7 @@ def promote(args):
     if not args.reviewed or not args.reason:
         raise Stop('review verification evidence and provide --reviewed and --reason')
     manifest, _ = registry()
-    record = manifest['packages'][args.skill_id]
+    record = lookup_package(manifest, args.skill_id)
     selected, _, commit = snapshot(args.ref, args.skill_id)
     if selected['sha256'] != record['sha256']:
         raise Stop('the catalog advanced after this trial; review and test the current revision')
@@ -157,8 +154,13 @@ def find_base(ident, digest, preferred=None):
             files = files_in(folder / 'package', item.get('file_modes'))
             if tree_hash(files) == digest:
                 return files, 'candidate:' + item['id']
-    refs = [preferred] if preferred else []
-    refs += git('log', '-n', '300', '--format=%H', '--', 'skills/manifest.json').stdout.splitlines()
+    refs = []
+    if (ROOT / '.git').exists():
+        if preferred:
+            refs.append(preferred)
+        history = git('log', '-n', '300', '--format=%H', '--', 'skills/manifest.json', check=False)
+        if not history.returncode:
+            refs.extend(history.stdout.splitlines())
     for ref in dict.fromkeys(filter(None, refs)):
         try:
             record, files, commit = snapshot(ref, ident)

@@ -21,13 +21,13 @@ git diff --check
 | `library_audit.py` | 未配置库的公开审计、已审包、引用、依赖、正式版本、跟踪路径与资产字节保护 | 全部 |
 | `project_templates.py` | 静态共性模板、追加预览、已有约定和变更目标保护 | 全部 |
 | `boundaries.py` | 库标记、路径、目录边界与链接重定向保护 | 全部；部分链接项限 POSIX |
-| `transactions.py` | 入库回退、恢复、并发编辑和同步前置检查 | 全部；操作系统文件大小限额项限 POSIX |
+| `transactions.py` | 入库和分发恢复、候选发布中断、扫描拒绝及同步前置检查 | 全部；操作系统文件大小限额项限 POSIX |
 | `workflows.py` | 外部来源、工作区、双端变化、有限试用、正式采用、恢复和跨库同步 | 全部 |
 | `skill_dependencies.py` | MCP 静态声明、索引、回流和跨库保留；不调用连接管理程序 | 全部 |
 | `run.py` | 完整副本、二进制 / CRLF、执行意图、原生改动、部署及共享内容边界 | 非 Windows |
 | `skill_catalog.py` | 分类、技能依赖、索引、别名、本机运行依赖和合成原生目录协议 | 非 Windows |
 
-`transactions.py` 用 Python 审计钩子注入元数据写入错误与进程退出，检查入库回退、重复恢复和未知编辑保护。POSIX 还使用文件大小限额检查准备失败。这些是受控故障注入，不等于真实磁盘耗尽或断电验收。
+`transactions.py` 用 Python 审计钩子注入元数据写入错误与进程退出，检查入库与分发恢复、候选的原子发布和未知编辑保护。POSIX 还使用文件大小限额检查准备失败。这些是受控故障注入，不等于真实磁盘耗尽或断电验收。
 
 `skill_dependencies.py` 通过可执行陷阱验证资产流程不调用连接管理程序，合成的旧本机收据与原生 MCP 配置保持原字节。它不连接 MCP 服务，也不核验账号或工具可用性。
 
@@ -39,7 +39,7 @@ git diff --check
 aak audit --library-only --output artifacts/library-audit.json
 ```
 
-该模式检查 Git 跟踪路径可移植性、已审包的字节与逻辑模式、技能引用、技能依赖关系、MCP 声明和不可变正式版本。它不要求 `.local/config.json` 或客户端安装，不读取本机基线和试用状态，不验证命令、文件、Python 环境或服务是否可用，也不替代 Gitleaks 内容扫描。包含正式版本指针的库需要相应的完整 Git 历史。
+该模式检查 Git 跟踪路径可移植性、已审包的字节与逻辑模式、技能引用、技能依赖关系、运行依赖和 MCP 声明的格式，以及不可变正式版本。它不要求 `.local/config.json` 或客户端安装，不读取本机基线和试用状态，不验证命令、文件、Python 环境或服务是否可用，也不替代 Gitleaks 内容扫描。包含正式版本指针的库需要相应的完整 Git 历史。
 
 Home Repo 可使用以下 GitHub Actions 示例。保存为个人库自己的 `.github/workflows/audit.yml`；例中 AAK 跟随 `main`，需要可复现版本时换成已验证的完整提交 SHA：
 

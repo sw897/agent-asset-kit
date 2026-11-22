@@ -96,7 +96,7 @@ aak sync --agent codex --message "Update home repo" --local-only
 
 个人库可以只在本地使用。跨设备时，可将它放到自己的 GitHub 私有仓库，同步后在各设备分发所需技能。远端配置和推送授权见[GitHub 私有库同步](docs/workflows.md#可选-github-私有资产库)。
 
-Home Repo 的 CI 可运行 `aak audit --library-only`，检查库内登记、包哈希、技能引用、技能依赖关系和 MCP 声明。该模式无需本机配置或 Agent 安装，也不验证服务可用性或替代敏感信息扫描；[验证说明](docs/validation.md#验证个人-home-repo)提供 CI 示例。工具的通用测试由本仓库维护，个人库只校验自己的资产。
+Home Repo 的 CI 可运行 `aak audit --library-only`，检查库内登记、包哈希、技能引用、技能依赖关系、运行依赖与 MCP 声明的格式。该模式无需本机配置或 Agent 安装，也不验证服务可用性或替代敏感信息扫描；[验证说明](docs/validation.md#验证个人-home-repo)提供 CI 示例。工具的通用测试由本仓库维护，个人库只校验自己的资产。
 
 ## 更多用法
 
