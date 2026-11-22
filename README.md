@@ -55,7 +55,7 @@ aak attach --apply
 aak sync --agent codex --message "Initialize home repo" --local-only
 ```
 
-`--agent codex` 记录本次维护者身份，按实际使用的 Agent 替换。支持的客户端包括 Codex、Claude Code、Hermes、OpenCode、ZCode 和 DeepSeek Harness，各设备分别配置自己的目标和路径。
+`--agent codex` 记录本次维护者身份，按实际使用的 Agent 替换。支持的客户端包括 Codex、Claude Code、Hermes、OpenCode、ZCode、DeepSeek Harness 和 Antigravity，各设备分别配置自己的目标和路径。
 
 ## 库里放什么
 

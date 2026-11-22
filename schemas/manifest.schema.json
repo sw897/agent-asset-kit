@@ -35,7 +35,7 @@
       "type": "object",
       "required": ["agent", "path"],
       "properties": {
-        "agent": {"enum": ["codex", "claude", "hermes", "opencode", "zcode", "deepseekharness", "shared"]},
+        "agent": {"enum": ["codex", "claude", "hermes", "opencode", "zcode", "deepseekharness", "antigravity", "shared"]},
         "path": {"type": "string", "minLength": 1}
       },
       "additionalProperties": false

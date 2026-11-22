@@ -163,6 +163,47 @@ def main():
             check('older marked library locations remain usable through explicit root without changing the default',
                   cli('--root', legacy, 'catalog')['packages'] == {} and cli('status')['primary'] == str(default))
 
+            # A desktop-only client must support independent deployment and
+            # collection, reject nested bindings, and report native probing honestly.
+            antigravity = home / '.gemini/config/skills'
+            added = cli('--root', default, 'agent', 'add', '--kind', 'antigravity', '--reviewed')
+            check('Antigravity registration selects its global directory before any writes',
+                  Path(added['configuration']['skills_root']) == antigravity and
+                  Path(added['configuration']['instructions']) == home / '.gemini/config/AGENTS.md'
+                  and not antigravity.exists())
+            command = ('--root', default, 'enable', '--skill-id', saved['skill_id'],
+                       '--target', 'antigravity', '--agent', 'codex', '--reviewed')
+            rejected = cli(*command, '--path', 'nested/fixture-skill', expected=2)
+            check('Antigravity rejects nested skill targets',
+                  'Antigravity user skills require one directory level' in rejected['reason'])
+            cli(*command)
+            cli('--root', default, 'sync', '--agent', 'codex', '--message',
+                'Enable synthetic Antigravity binding', '--local-only')
+            deploy = ('--root', default, 'deploy', '--target', 'antigravity')
+            plan = cli(*deploy)
+            check('Antigravity preview confines installation to the new target',
+                  [(row['agent'], row['action']) for row in plan['actions']] == [('antigravity', 'create')]
+                  and not antigravity.exists())
+            cli(*deploy, '--apply', '--plan', plan['plan_id'])
+            entry = antigravity / 'fixture-skill/SKILL.md'
+            codex_entry = home / '.codex/skills/fixture-skill/SKILL.md'
+            original = codex_entry.read_bytes()
+            audit = cli('--root', default, 'audit', '--target', 'antigravity')
+            check('Antigravity audit matches an independent copy',
+                  entry.read_bytes() == original and not entry.parent.is_symlink() and
+                  [row['status'] for row in audit['copies']] == ['MATCH'])
+            native = cli('--root', default, 'doctor', '--native', '--target', 'antigravity', expected=2)
+            check('Antigravity without a catalog probe reports native discovery as unverified',
+                  native['native_discovery']['antigravity']['status'] == 'UNVERIFIED' and
+                  native['copies'][0]['discovery'] == 'UNVERIFIED')
+            entry.write_bytes(original + b'\nReviewed synthetic Antigravity edit.\n')
+            capture = cli('--root', default, 'collect')
+            check('Antigravity edits are captured as local candidates for the same skill',
+                  not capture['blocked'] and len(capture['candidates']) == 1 and
+                  capture['candidates'][0]['skill_id'] == saved['skill_id'] and
+                  capture['candidates'][0]['bindings'][0]['agent'] == 'antigravity' and
+                  codex_entry.read_bytes() == original)
+
             other_home = base / 'other user'
             ordinary = other_home / 'agent-home'
             ordinary.mkdir(parents=True)

@@ -353,14 +353,22 @@ def package(root, record):
     return path, files
 
 
+def native_binding_path(binding):
+    part = relative(binding['path'])
+    if any(segment.startswith('.') for segment in part.parts):
+        raise Stop('hidden/native-managed binding paths cannot be owned')
+    label = {'zcode': 'ZCode', 'antigravity': 'Antigravity'}.get(binding['agent'])
+    if label and len(part.parts) != 1:
+        raise Stop(f'{label} user skills require one directory level')
+    return part
+
+
 def native_path(config, binding):
     endpoint = agent_adapters.endpoint(config, binding)
     root = Path(endpoint['skills_root'])
     if link_like(root):
         raise Stop('native root itself must be a directory, not a link')
-    part = relative(binding['path'])
-    if any(p.startswith('.') for p in part.parts):
-        raise Stop('hidden/native-managed binding paths cannot be owned')
+    part = native_binding_path(binding)
     if binding['agent'] == 'hermes':
         if part.name in hermes_bundled(endpoint):
             raise Stop('Hermes bundled skills cannot be owned')
@@ -376,11 +384,7 @@ def native_path(config, binding):
 def validate_binding(config, binding):
     if binding['agent'] not in (*agent_adapters.KINDS, 'shared'):
         raise Stop('unknown Agent adapter')
-    part = relative(binding['path'])
-    if any(p.startswith('.') for p in part.parts):
-        raise Stop('hidden/native-managed binding paths cannot be owned')
-    if binding['agent'] == 'zcode' and len(part.parts) != 1:
-        raise Stop('ZCode user skills require one directory level')
+    native_binding_path(binding)
     # A shared policy is independent of local aliases. Validate each active
     # endpoint explicitly; disabled or absent instances do not own the policy.
     for local in agent_adapters.expand(config, binding):
@@ -426,7 +430,7 @@ def inventory(config):
                     continue
                 item = result.setdefault(str(source), {'source': str(source), 'bindings': []})
                 item['bindings'].append(binding)
-            elif not path.is_symlink():
+            elif agent != 'antigravity' and not path.is_symlink():
                 pending.extend(sorted(path.iterdir()))
     return list(result.values()), excluded
 
@@ -704,9 +708,7 @@ def deploy(apply=False, restore_missing=False, preserve_runtime=False, skill_ids
                                   if not instances or b['instance'] in instances}
                         if endpoint['id'] not in wanted:
                             raise Stop('selected target shares a physical root with an unselected Agent; select every alias or use an isolated root')
-                if binding['agent'] == 'zcode' and len(relative(binding['path']).parts) != 1:
-                    raise Stop('ZCode user skills require one directory level')
-                identity = unicodedata.normalize('NFC', str(root.resolve() / relative(binding['path']))).casefold()
+                identity = unicodedata.normalize('NFC', str(root.resolve() / target.relative_to(root))).casefold()
                 for previous, owner in locations.items():
                     if previous == identity:
                         if owner != (ident, record['sha256']):

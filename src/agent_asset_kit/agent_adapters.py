@@ -23,6 +23,8 @@ ADAPTERS = {
               'docs': 'https://zcode.z.ai/en/docs/skill'},
     'deepseekharness': {'root': '.dsh/skills', 'instructions': '.dsh/AGENTS.md', 'command': 'dsh',
                        'docs': 'docs/adapters.md#deepseek-harness'},
+    'antigravity': {'root': '.gemini/config/skills', 'instructions': '.gemini/config/AGENTS.md',
+                    'command': 'agy', 'docs': 'https://antigravity.google/docs/skills'},
 }
 KINDS = tuple(ADAPTERS)
 
@@ -222,6 +224,8 @@ def json_catalog(config, kind, instance=None):
                 '--cwd', str(ROOT)]
         environment = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
         method = 'bundled DeepSeek Harness FileSystemSkillProvider.list'
+    elif kind == 'antigravity':
+        raise Stop('Antigravity needs a reviewed native catalog probe. The app lists skills in Customizations > Installed')
     else:
         raise Stop('no native JSON catalog is defined for this Agent')
     process = subprocess.run(argv, capture_output=True, text=True, encoding='utf-8', timeout=30,

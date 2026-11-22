@@ -74,6 +74,8 @@ aak sync --agent codex --message "Initialize home repo" --local-only
 
 `try`、`share` 会直接写入选定客户端，`save` 会更新库内资产；三者都不自动提交 Git。`save --dry-run` 可预览修改。已存在但没有 `try` / `share` 收据的原生技能，使用下面的候选采集流程。分享给其他客户端前先用 `aak agent list` 核对目标，按需显式启用或登记本机实例。
 
+Antigravity 实例用 `aak agent add --kind antigravity --reviewed` 登记。默认技能目录为 `~/.gemini/config/skills`。在应用的 **Customizations → Installed** 核对原生发现。 [官方发现说明](https://antigravity.google/docs/customization-discovery/)
+
 ## 维护 Home Repo
 
 单个技能用 `save` 保存后，用 `aak sync --agent codex --message "Save skill" --local-only` 提交到 Git。主目录有尚未提交的改动时，先审阅并提交，再刷新或创建工作区。

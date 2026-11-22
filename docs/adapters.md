@@ -12,6 +12,7 @@
 | OpenCode | .config/opencode/skills | .config/opencode/AGENTS.md | debug skill；可登记版本对应的只读探针 |
 | ZCode | .zcode/skills | .zcode/AGENTS.md | skills list --json |
 | DeepSeek Harness | .dsh/skills | .dsh/AGENTS.md | 见下节 |
+| Antigravity | .gemini/config/skills | .gemini/config/AGENTS.md | App 的 Customizations → Installed，或登记已审阅的只读探针 |
 
 表中列的是 AAK 实现的探针，不代表当前设备已验证对应客户端或所有版本。客户端还能发现其他目录时，仍以其本机配置和原生报告为准。`shared` 是底层共享目录绑定，不是原生客户端适配器，不能作为 `try --to` 或 `doctor --target` 的客户端名。
 
@@ -45,6 +46,12 @@ aak doctor --native --target codex --instance codex-work
 ## DeepSeek Harness
 
 此适配需要用户提供并审阅本机安装包的 runtime 与 interpreter。工具使用随包附带的 Node 脚本调用 FileSystemSkillProvider.list，传入所选资产库 cwd 和原生 home，不发送用户问题。不从远端下载安装包，也不将本机安装路径写入共享包。
+
+## Antigravity
+
+用 `aak agent add --kind antigravity --reviewed` 登记本机实例。默认同步 App 和 CLI 共用的全局技能目录，技能包直接放在技能根下一级。 [官方技能目录说明](https://antigravity.google/docs/skills)
+
+使用 App 的 **Customizations → Installed** 核对原生目录。配置了 `--probe-command-json` 的实例可用 `doctor --native --target antigravity` 查询已审阅的原生目录探针。没有探针时，`audit --target antigravity` 仍会核对副本。 [官方发现说明](https://antigravity.google/docs/customization-discovery/)
 
 ## 验证边界
 
